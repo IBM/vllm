@@ -14,6 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, Response
 
 import vllm
+from vllm.tgis_utils.args import add_tgis_args, postprocess_tgis_args
+from vllm.entrypoints.grpc.grpc_server import start_grpc_server
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
 from vllm.entrypoints.openai.protocol import (CompletionRequest,
@@ -28,6 +30,8 @@ TIMEOUT_KEEP_ALIVE = 5  # seconds
 
 openai_serving_chat: OpenAIServingChat = None
 openai_serving_completion: OpenAIServingCompletion = None
+async_llm_engine: AsyncLLMEngine = None
+args: argparse.Namespace = None
 logger = init_logger(__name__)
 
 
@@ -42,7 +46,14 @@ async def lifespan(app: fastapi.FastAPI):
     if not engine_args.disable_log_stats:
         asyncio.create_task(_force_log())
 
+    grpc_server = await start_grpc_server(async_llm_engine, args)
+
     yield
+
+    logger.info("Gracefully stopping gRPC server")
+    await grpc_server.stop(30)  #TODO configurable grace
+    await grpc_server.wait_for_termination()
+    logger.info("gRPC server stopped")
 
 
 app = fastapi.FastAPI(lifespan=lifespan)
@@ -50,7 +61,11 @@ app = fastapi.FastAPI(lifespan=lifespan)
 
 def parse_args():
     parser = make_arg_parser()
-    return parser.parse_args()
+    parser = add_tgis_args(parser)
+    parsed_args = parser.parse_args()
+    parsed_args = postprocess_tgis_args(parsed_args)
+    return parsed_args
+
 
 
 # Add prometheus asgi middleware to route /metrics requests
@@ -161,6 +176,7 @@ if __name__ == "__main__":
                                             args.chat_template)
     openai_serving_completion = OpenAIServingCompletion(
         engine, served_model, args.lora_modules)
+    async_llm_engine = engine
 
     app.root_path = args.root_path
     uvicorn.run(app,

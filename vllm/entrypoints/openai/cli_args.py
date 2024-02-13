@@ -10,7 +10,7 @@ import ssl
 
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.entrypoints.openai.serving_engine import LoRA
-
+from vllm.tgis_utils.args import EnvVarArgumentParser
 
 class LoRAParserAction(argparse.Action):
 
@@ -23,7 +23,7 @@ class LoRAParserAction(argparse.Action):
 
 
 def make_arg_parser():
-    parser = argparse.ArgumentParser(
+    parser = EnvVarArgumentParser(
         description="vLLM OpenAI-Compatible RESTful API server.")
     parser.add_argument("--host", type=str, default=None, help="host name")
     parser.add_argument("--port", type=int, default=8000, help="port number")
