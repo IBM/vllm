@@ -46,7 +46,7 @@ class ModelConfig:
             a tag name, or a commit id. If unspecified, will use the default
             version.
         code_revision: The specific revision to use for the model code on
-            Hugging Face Hub. It can be a branch name, a tag name, or a 
+            Hugging Face Hub. It can be a branch name, a tag name, or a
             commit id. If unspecified, will use the default version.
         tokenizer_revision: The specific tokenizer version to use. It can be a
             branch name, a tag name, or a commit id. If unspecified, will use
@@ -387,6 +387,12 @@ class ParallelConfig:
             fall back to NCCL.
         ray_workers_use_nsight: Whether to profile Ray workers with nsight, see
             https://docs.ray.io/en/latest/ray-observability/user-guides/profiling.html#profiling-nsight-profiler.
+        async_tokenizers: Kind of workers to use for asynchronous tokenization.
+            Can be "thread", "ray", or "none".
+        num_tokenizer_workers: Number of tokenizer workers to use for
+            asynchronous tokenization. If 0, will use
+            synchronous tokenization.
+        tokenizer_actor_options: Options for tokenizer Ray Actors.
     """
 
     def __init__(
@@ -397,6 +403,9 @@ class ParallelConfig:
         max_parallel_loading_workers: Optional[int] = None,
         disable_custom_all_reduce: bool = False,
         ray_workers_use_nsight: bool = False,
+        async_tokenizers: Optional[str] = "thread",
+        num_tokenizer_workers: Optional[int] = None,
+        tokenizer_actor_options: Optional[dict] = None,
     ) -> None:
         self.pipeline_parallel_size = pipeline_parallel_size
         if is_neuron():
@@ -411,6 +420,9 @@ class ParallelConfig:
         self.max_parallel_loading_workers = max_parallel_loading_workers
         self.disable_custom_all_reduce = disable_custom_all_reduce
         self.ray_workers_use_nsight = ray_workers_use_nsight
+        self.async_tokenizers = async_tokenizers
+        self.num_tokenizer_workers = num_tokenizer_workers
+        self.tokenizer_actor_options = tokenizer_actor_options
 
         self.world_size = pipeline_parallel_size * self.tensor_parallel_size
         if self.worker_use_ray is None:

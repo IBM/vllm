@@ -11,6 +11,7 @@ from grpc._cython.cygrpc import AbortError
 from grpc.aio import ServicerContext
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
+from vllm.transformers_utils.tokenizer import TokenizerGroup
 from vllm.logger import init_logger
 from vllm.config import ModelConfig
 from vllm.entrypoints.grpc.pb import generation_pb2_grpc
@@ -70,9 +71,10 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
 
     def __init__(self, engine: AsyncLLMEngine, args: argparse.Namespace):
         self.engine: AsyncLLMEngine = engine
+        self.tokenizer_group: TokenizerGroup = engine.get_tokenizer_group()
         self.tokenizer: Union[
             PreTrainedTokenizer,
-            PreTrainedTokenizerFast] = engine.engine.tokenizer.tokenizer
+            PreTrainedTokenizerFast] = self.tokenizer_group.tokenizer
         self.config: ModelConfig = None
 
         self.max_max_new_tokens = args.max_new_tokens
@@ -406,6 +408,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             token_ids = token_ids[token_start_offset:]
             if logprobs_list is not None:
                 logprobs_list = logprobs_list[token_start_offset:]
+        #TODO later use get_lora_tokenizer here
         token_texts = self.tokenizer.convert_ids_to_tokens(token_ids)
         for i, text in enumerate(token_texts):
             token_info = TokenInfo(text=text)
@@ -417,6 +420,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                     items = sorted(logprobs.items(),
                                    key=lambda item: item[1],
                                    reverse=True)[:top_n_tokens]
+                    #TODO later use get_lora_tokenizer here
                     tt_texts = self.tokenizer.convert_ids_to_tokens(
                         [tid for tid, _ in items])
                     token_info.top_tokens.extend(
@@ -437,7 +441,8 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             if truncate_input_tokens is not None else {}
 
         max_model_len = self.config.max_model_len
-        input_ids = self.tokenizer(prompt, **tokenize_kwargs).input_ids
+        input_ids = await self.tokenizer_group.encode_async(
+            prompt, **tokenize_kwargs)
         token_num = len(input_ids)
 
         if token_num >= max_model_len:
@@ -468,17 +473,18 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
     @log_rpc_handler_errors
     async def Tokenize(self, request: BatchedTokenizeRequest,
                        context: ServicerContext) -> BatchedTokenizeResponse:
-        strings = [req.text for req in request.requests]
+        responses: List[TokenizeResponse] = []
 
-        #TODO check skip special tokens behaviour (& compare with TGIS)
-        batch_encoding = self.tokenizer(strings)  # TODO
+        #TODO maybe parallelize, also move convert_ids_to_tokens into the other threads
+        for req in request.requests:
+            token_ids = await self.tokenizer_group.encode_async(req.text)
+            responses.append(
+                TokenizeResponse(
+                    token_count=len(token_ids),
+                    tokens=None if not request.return_tokens else
+                    self.tokenizer.convert_ids_to_tokens(token_ids)))
 
-        return BatchedTokenizeResponse(responses=[
-            TokenizeResponse(token_count=len(tokens),
-                             tokens=None if not request.return_tokens else self
-                             .tokenizer.convert_ids_to_tokens(tokens))
-            for tokens in batch_encoding.input_ids
-        ])
+        return BatchedTokenizeResponse(responses=responses)
 
     @log_rpc_handler_errors
     async def ModelInfo(self, request: ModelInfoRequest,
