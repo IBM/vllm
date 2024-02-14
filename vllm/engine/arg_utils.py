@@ -1,10 +1,24 @@
 import argparse
+import json
 import dataclasses
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
 from vllm.config import (CacheConfig, DeviceConfig, ModelConfig,
                          ParallelConfig, SchedulerConfig, LoRAConfig)
+
+
+class _StoreJsonAction(argparse._StoreAction):
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        json_values = []
+        for value in values:
+            try:
+                json_values.append(json.loads(value))
+            except json.JSONDecodeError as e:
+                raise argparse.ArgumentTypeError(
+                    f'Invalid JSON string: {value}') from e
+        setattr(namespace, self.dest, json_values)
 
 
 @dataclass
@@ -40,6 +54,9 @@ class EngineArgs:
     enforce_eager: bool = False
     max_context_len_to_capture: int = 8192
     disable_custom_all_reduce: bool = False
+    async_tokenizers: str = 'thread'
+    num_tokenizer_workers: Optional[int] = None
+    tokenizer_actor_options: Optional[dict] = None
     enable_lora: bool = False
     max_loras: int = 1
     max_lora_rank: int = 16
@@ -251,6 +268,26 @@ class EngineArgs:
                             action='store_true',
                             default=EngineArgs.disable_custom_all_reduce,
                             help='See ParallelConfig')
+        parser.add_argument('--async-tokenizers',
+                            type=str,
+                            default=EngineArgs.async_tokenizers,
+                            choices=['thread', 'ray', 'none'],
+                            help='Kind of workers to use for asynchronous '
+                            'tokenization. Can be "thread", "ray", or "none"')
+        parser.add_argument('--num-tokenizer-workers',
+                            type=int,
+                            default=EngineArgs.num_tokenizer_workers,
+                            help='Number of tokenizer workers to use for '
+                            'asynchronous tokenization. Default chosen  '
+                            'based on available CPU cores.')
+        parser.add_argument('--tokenizer-actor-options',
+                            type=str,
+                            default=EngineArgs.tokenizer_actor_options,
+                            action=_StoreJsonAction,
+                            help='Options for tokenizer Ray actors. '
+                            'This should be a JSON string that will be '
+                            'parsed into a dictionary. Ignored if '
+                            'async-tokenizers is not "ray".')
         # LoRA related configs
         parser.add_argument('--enable-lora',
                             action='store_true',
@@ -316,12 +353,12 @@ class EngineArgs:
                                    self.swap_space, self.kv_cache_dtype,
                                    model_config.get_sliding_window(),
                                    self.enable_prefix_caching)
-        parallel_config = ParallelConfig(self.pipeline_parallel_size,
-                                         self.tensor_parallel_size,
-                                         self.worker_use_ray,
-                                         self.max_parallel_loading_workers,
-                                         self.disable_custom_all_reduce,
-                                         self.ray_workers_use_nsight)
+        parallel_config = ParallelConfig(
+            self.pipeline_parallel_size, self.tensor_parallel_size,
+            self.worker_use_ray, self.max_parallel_loading_workers,
+            self.disable_custom_all_reduce, self.ray_workers_use_nsight,
+            self.async_tokenizers if self.async_tokenizers != "none" else None,
+            self.num_tokenizer_workers, self.tokenizer_actor_options)
         scheduler_config = SchedulerConfig(self.max_num_batched_tokens,
                                            self.max_num_seqs,
                                            model_config.max_model_len,

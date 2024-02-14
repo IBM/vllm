@@ -5,6 +5,7 @@ import subprocess
 import uuid
 import gc
 from collections.abc import Iterable
+from concurrent.futures import Executor
 from platform import uname
 from typing import List, Tuple, Union
 from packaging.version import parse, Version
@@ -155,7 +156,10 @@ def in_wsl() -> bool:
     return "microsoft" in " ".join(uname()).lower()
 
 
-def make_async(func: Callable[..., T]) -> Callable[..., Awaitable[T]]:
+def make_async(
+    func: Callable[..., T],
+    executor: Optional[Executor] = None,
+) -> Callable[..., Awaitable[T]]:
     """Take a blocking function, and run it on in an executor thread.
 
     This function prevents the blocking function from blocking the
@@ -166,7 +170,7 @@ def make_async(func: Callable[..., T]) -> Callable[..., Awaitable[T]]:
     def _async_wrapper(*args, **kwargs) -> asyncio.Future:
         loop = asyncio.get_event_loop()
         p_func = partial(func, *args, **kwargs)
-        return loop.run_in_executor(executor=None, func=p_func)
+        return loop.run_in_executor(executor=executor, func=p_func)
 
     return _async_wrapper
 
