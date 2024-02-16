@@ -19,7 +19,7 @@ del _configure_system
 from vllm.engine.arg_utils import AsyncEngineArgs, EngineArgs  # noqa: E402
 from vllm.engine.async_llm_engine import AsyncLLMEngine  # noqa: E402
 from vllm.engine.llm_engine import LLMEngine  # noqa: E402
-from vllm.engine.ray_utils import initialize_cluster  # noqa: E402
+from vllm.engine.ray_utils import initialize_ray_cluster  # noqa: E402
 from vllm.entrypoints.llm import LLM  # noqa: E402
 from vllm.outputs import CompletionOutput, RequestOutput  # noqa: E402
 from vllm.sampling_params import SamplingParams  # noqa: E402
@@ -35,5 +35,5 @@ __all__ = [
     "EngineArgs",
     "AsyncLLMEngine",
     "AsyncEngineArgs",
-    "initialize_cluster",
+    "initialize_ray_cluster",
 ]

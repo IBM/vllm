@@ -6,13 +6,14 @@ import subprocess
 import sys
 import warnings
 from pathlib import Path
-from typing import List, Set
+from typing import List, Set, Dict
 
 from packaging.version import parse, Version
 import setuptools
 import torch
 import torch.utils.cpp_extension as torch_cpp_ext
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension, CUDA_HOME, ROCM_HOME
+from typing import Optional
 
 ROOT_DIR = os.path.dirname(__file__)
 # This is a temporary directory to store third-party packages.
@@ -475,6 +476,12 @@ def get_requirements() -> List[str]:
     return requirements
 
 
+def get_ray_requirement() -> Optional[Dict[str, List[str]]]:
+    if _is_neuron():
+        return None
+    return {"ray": ["ray >= 2.9"]}
+
+
 package_data = {
     "vllm": ["py.typed", "model_executor/layers/fused_moe/configs/*.json"]
 }
@@ -508,6 +515,7 @@ setuptools.setup(
                                                "examples", "tests")),
     python_requires=">=3.8",
     install_requires=get_requirements(),
+    extras_requires=get_ray_requirement(),
     ext_modules=ext_modules,
     cmdclass={"build_ext": build_ext} if not _is_neuron() else {},
     distclass=BinaryDistribution,

@@ -1,6 +1,5 @@
 import argparse
 import inspect
-import logging
 import time
 import uuid
 
@@ -41,9 +40,9 @@ async def _handle_exception(e: Exception, func, *args, **kwargs):
     if not isinstance(e, AbortError):
         if type(e).__name__ == "torch.cuda.OutOfMemoryError":  #TODO check
             context = kwargs.get("context", None) or args[-1]
-            logging.exception(f"{func.__name__} caused GPU OOM error")
+            logger.exception(f"{func.__name__} caused GPU OOM error")
             await context.abort(StatusCode.RESOURCE_EXHAUSTED, str(e))
-        logging.exception(f"{func.__name__} failed")
+        logger.exception(f"{func.__name__} failed")
     raise e
 
 
@@ -494,6 +493,11 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
 
 async def start_grpc_server(engine: AsyncLLMEngine,
                             args: argparse.Namespace) -> aio.Server:
+
+    # Log memory summary after model is loaded
+    from torch.cuda import memory_summary
+    logger.info(memory_summary(engine.engine.device_config.device))
+
     server = aio.server()
     service = TextGenerationService(engine, args)
     await service._post_init()

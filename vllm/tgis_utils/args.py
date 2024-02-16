@@ -1,6 +1,10 @@
 import argparse
 import os
 
+from vllm.logger import init_logger
+
+logger = init_logger(__name__)
+
 
 def _to_env_var(arg_name: str):
     return arg_name.upper().replace("-", "_")
@@ -82,7 +86,9 @@ def postprocess_tgis_args(args: argparse.Namespace) -> argparse.Namespace:
         args.model = args.model_name
     if args.max_sequence_length is not None:
         if args.max_model_len not in (None, args.max_sequence_length):
-            raise ValueError("Inconsistent max_model_len and max_sequence_length arg values")
+            raise ValueError(
+                "Inconsistent max_model_len and max_sequence_length arg values"
+            )
         args.max_model_len = args.max_sequence_length
     if args.dtype_str is not None:
         if args.dtype not in (None, 'auto', args.dtype_str):
@@ -102,5 +108,12 @@ def postprocess_tgis_args(args: argparse.Namespace) -> argparse.Namespace:
                 "Inconsistent tensor_parallel_size and num_gpus/num_shard arg values"
             )
         args.tensor_parallel_size = num_gpus
+
+    if args.max_batch_size is not None:
+        # Existing MAX_BATCH_SIZE settings in TGIS configs may not necessarily be best for
+        # vLLM so we'll just log a warning for now
+        logger.warn(
+            f"max_batch_size is set to {args.max_batch_size} but will be ignored for now"
+        )
 
     return args
