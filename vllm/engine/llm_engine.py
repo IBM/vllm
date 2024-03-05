@@ -14,19 +14,23 @@ from vllm.config import (CacheConfig, DeviceConfig, ModelConfig,
 from vllm.core.scheduler import Scheduler, SchedulerOutputs
 from vllm.engine.arg_utils import EngineArgs
 from vllm.engine.metrics import StatLogger, Stats
-from vllm.engine.ray_utils import RayWorkerVllm, initialize_cluster, ray
+from vllm.engine.ray_utils import RayWorkerVllm, initialize_ray_cluster, ray
+from vllm.engine.local_worker_utils import LocalWorkerVllm, WorkerMonitor, ResultHandler
 from vllm.logger import init_logger
 from vllm.outputs import RequestOutput
 from vllm.sampling_params import SamplingParams
 from vllm.sequence import (Logprob, SamplerOutput, Sequence, SequenceGroup,
                            SequenceGroupOutput, SequenceOutput, SequenceStatus)
 from vllm.transformers_utils.tokenizer import (detokenize_incrementally,
-                                               TokenizerGroup)
+                                               BaseTokenizerGroup,
+                                               TokenizerGroup,
+                                               RayTokenizerGroupPool,
+                                               ThreadPoolTokenizerGroup)
 from vllm.utils import (Counter, set_cuda_visible_devices, get_ip,
                         get_open_port, get_distributed_init_method)
 
 if ray:
-    from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy
+    from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy, NodeAffinitySchedulingStrategy
 
 if TYPE_CHECKING:
     from ray.util.placement_group import PlacementGroup
@@ -141,6 +145,9 @@ class LLMEngine:
         else:
             self._init_workers()
 
+        # Make sure the tokenizer actors are alive
+        self.tokenizer.ping()
+
         # Profile the memory usage and initialize the cache.
         self._init_cache()
 
@@ -169,30 +176,80 @@ class LLMEngine:
         return Worker
 
     def _init_workers(self):
+        world_size = self.parallel_config.tensor_parallel_size
+
+        # Set CUDA_VISIBLE_DEVICES for the driver, inherited by workers
+        if "CUDA_VISIBLE_DEVICES" not in os.environ:
+            set_cuda_visible_devices(range(world_size))
+
+        from torch.cuda import device_count
+        assert world_size <= device_count(), (
+            "please set tensor_parallel_size to less than max local gpu count")
+
+        distributed_init_method = get_distributed_init_method(
+            get_ip(), get_open_port())
+
+        if world_size == 1:
+            self.workers = []
+        else:
+            result_handler = ResultHandler()
+            self.workers = [
+                LocalWorkerVllm(
+                    result_handler,
+                    self.model_config,
+                    self.parallel_config,
+                    self.scheduler_config,
+                    self.device_config,
+                    local_rank=rank,
+                    rank=rank,
+                    distributed_init_method=distributed_init_method,
+                    lora_config=self.lora_config,
+                    kv_cache_dtype=self.cache_config.cache_dtype,
+                ) for rank in range(1, world_size)
+            ]
+
+            for worker in self.workers:
+                worker.start()
+
+            self.worker_monitor = WorkerMonitor(self.workers, result_handler)
+            result_handler.start()
+            self.worker_monitor.start()
+
+        self._init_driver_worker_and_model(0, 0, distributed_init_method)
+
+    def __del__(self):
+        # Terminate local worker processes when engine is garbage collected
+        if (worker_monitor := getattr(self, "worker_monitor",
+                                      None)) is not None:
+            worker_monitor.close()
+
+    def _init_driver_worker_and_model(self, rank: int, local_rank: int,
+                                      distributed_init_method: str):
         # Lazy import the Worker to avoid importing torch.cuda/xformers
         # before CUDA_VISIBLE_DEVICES is set in the Worker
         Worker = self._dispatch_worker()
 
-        assert self.parallel_config.world_size == 1, (
-            "Ray is required if parallel_config.world_size > 1.")
-
-        self.workers: List[Worker] = []
-        distributed_init_method = get_distributed_init_method(
-            get_ip(), get_open_port())
         self.driver_worker = Worker(
             self.model_config,
             self.parallel_config,
             self.scheduler_config,
             self.device_config,
-            local_rank=0,
-            rank=0,
+            local_rank=local_rank,
+            rank=rank,
             distributed_init_method=distributed_init_method,
             lora_config=self.lora_config,
             kv_cache_dtype=self.cache_config.cache_dtype,
             is_driver_worker=True,
         )
-        self._run_workers("init_model")
-        self._run_workers("load_model")
+        # don't use cupy for eager mode
+        self._run_workers("init_model",
+                          cupy_port=get_open_port()
+                          if not self.model_config.enforce_eager else None)
+        self._run_workers(
+            "load_model",
+            max_concurrent_workers=self.parallel_config.
+            max_parallel_loading_workers,
+        )
 
     def _init_tokenizer(self, **tokenizer_init_kwargs):
         init_kwargs = dict(
@@ -203,8 +260,48 @@ class LLMEngine:
             trust_remote_code=self.model_config.trust_remote_code,
             revision=self.model_config.tokenizer_revision)
         init_kwargs.update(tokenizer_init_kwargs)
-        self.tokenizer: TokenizerGroup = TokenizerGroup(
-            self.model_config.tokenizer, **init_kwargs)
+
+        async_tokenizers = self.parallel_config.async_tokenizers
+        tokenizer_workers = self.parallel_config.num_tokenizer_workers
+        if not async_tokenizers or tokenizer_workers == 0:
+            self.tokenizer: TokenizerGroup = TokenizerGroup(
+                self.model_config.tokenizer, **init_kwargs)
+        else:
+            if tokenizer_workers is None:
+                # Default based on CPU count
+                tokenizer_workers = min(
+                    16,
+                    os.cpu_count() -
+                    self.parallel_config.tensor_parallel_size - 1)
+                tokenizer_workers = max(1, tokenizer_workers)
+            if async_tokenizers == "thread":
+                self.tokenizer: TokenizerGroup = ThreadPoolTokenizerGroup(
+                    self.model_config.tokenizer,
+                    max_workers=tokenizer_workers,
+                    **init_kwargs)
+            elif async_tokenizers == "ray":
+                if not RayTokenizerGroupPool:
+                    raise ImportError(
+                        "RayTokenizerGroupPool is not available. Please install "
+                        "the ray package to use the tokenizer actors or "
+                        "set `num_tokenizer_actors` to 0.")
+                ray_actor_options = (
+                    self.parallel_config.tokenizer_actor_options or {
+                        "num_cpus": 0
+                    })
+                ray_actor_options.setdefault(
+                    "scheduling_strategy",
+                    NodeAffinitySchedulingStrategy(
+                        node_id=ray.get_runtime_context().get_node_id(),
+                        soft=True))
+
+                init_kwargs["num_actors"] = tokenizer_workers
+                init_kwargs["ray_actor_options"] = ray_actor_options
+                self.tokenizer: BaseTokenizerGroup = RayTokenizerGroupPool(
+                    self.model_config.tokenizer, **init_kwargs)
+            else:
+                raise ValueError(
+                    f"Unrecognized tokenizer worker type: {async_tokenizers}")
 
     def _init_workers_ray(self, placement_group: "PlacementGroup",
                           **ray_remote_kwargs):
@@ -301,28 +398,8 @@ class LLMEngine:
 
         driver_rank = 0
         driver_local_rank = node_workers[driver_node_id].index(driver_rank)
-        self.driver_worker = Worker(
-            model_config,
-            parallel_config,
-            scheduler_config,
-            device_config,
-            driver_local_rank,
-            driver_rank,
-            distributed_init_method,
-            lora_config=self.lora_config,
-            kv_cache_dtype=self.cache_config.cache_dtype,
-            is_driver_worker=True,
-        )
-
-        # don't use cupy for eager mode
-        self._run_workers("init_model",
-                          cupy_port=get_open_port()
-                          if not model_config.enforce_eager else None)
-        self._run_workers(
-            "load_model",
-            max_concurrent_workers=self.parallel_config.
-            max_parallel_loading_workers,
-        )
+        self._init_driver_worker_and_model(driver_rank, driver_local_rank,
+                                           distributed_init_method)
 
     def _verify_args(self) -> None:
         self.model_config.verify_with_parallel_config(self.parallel_config)
@@ -400,7 +477,7 @@ class LLMEngine:
         engine_configs = engine_args.create_engine_configs()
         parallel_config = engine_configs[2]
         # Initialize the cluster.
-        placement_group = initialize_cluster(parallel_config)
+        placement_group = initialize_ray_cluster(parallel_config)
         # Create the LLM engine.
         engine = cls(*engine_configs,
                      placement_group,
@@ -991,18 +1068,6 @@ class LLMEngine:
     def _check_stop(self, seq: Sequence,
                     sampling_params: SamplingParams) -> None:
         """Stop the finished sequences."""
-        for stop_str in sampling_params.stop:
-            if seq.output_text.endswith(stop_str):
-                self._finalize_sequence(seq, sampling_params, stop_str)
-                seq.status = SequenceStatus.FINISHED_STOPPED
-                return
-        if seq.get_last_token_id() in sampling_params.stop_token_ids:
-            stop_str = self.get_tokenizer_for_seq(seq).convert_ids_to_tokens(
-                seq.get_last_token_id())
-            self._finalize_sequence(seq, sampling_params, stop_str)
-            seq.status = SequenceStatus.FINISHED_STOPPED
-            return
-
         # Check if the sequence has reached max_model_len.
         if seq.get_len() > self.scheduler_config.max_model_len:
             seq.status = SequenceStatus.FINISHED_LENGTH_CAPPED
@@ -1011,6 +1076,26 @@ class LLMEngine:
         # Check if the sequence has reached max_tokens.
         if seq.get_output_len() == sampling_params.max_tokens:
             seq.status = SequenceStatus.FINISHED_LENGTH_CAPPED
+            return
+
+        # Check if the minimum number of tokens has been generated yet;
+        # skip the stop string/token checks if not
+        if seq.get_output_len() < sampling_params.min_tokens:
+            return
+
+        for stop_str in sampling_params.stop:
+            if seq.output_text.endswith(stop_str):
+                self._finalize_sequence(seq, sampling_params, stop_str)
+                seq.status = SequenceStatus.FINISHED_STOPPED
+                seq.stop_reason = stop_str
+                return
+        last_token_id = seq.get_last_token_id()
+        if last_token_id in sampling_params.stop_token_ids:
+            stop_str = self.get_tokenizer_for_seq(seq).convert_ids_to_tokens(
+                last_token_id)
+            self._finalize_sequence(seq, sampling_params, stop_str)
+            seq.status = SequenceStatus.FINISHED_STOPPED
+            seq.stop_reason = last_token_id
             return
 
         # Check if the sequence has generated the EOS token.
@@ -1063,13 +1148,19 @@ class LLMEngine:
             raise NotImplementedError(
                 "max_concurrent_workers is not supported yet.")
 
-        if use_ray_compiled_dag:
+        # Start the workers first.
+        if not self.parallel_config.worker_use_ray:
+            worker_outputs = [
+                worker.execute_method(method, *args, **kwargs)
+                for worker in self.workers
+            ]
+        elif use_ray_compiled_dag:
             # Right now, compiled DAG can only accept a single
             # input. TODO(sang): Fix it.
             output_channels = self.forward_dag.execute(1)
         else:
             # Start the ray workers first.
-            ray_worker_outputs = [
+            worker_outputs = [
                 worker.execute_method.remote(method, *args, **kwargs)
                 for worker in self.workers
             ]
@@ -1079,15 +1170,17 @@ class LLMEngine:
         if driver_kwargs is None:
             driver_kwargs = kwargs
 
-        # Start the driver worker after all the ray workers.
+        # Start the driver worker after all the other workers.
         driver_worker_output = getattr(self.driver_worker,
                                        method)(*driver_args, **driver_kwargs)
 
-        # Get the results of the ray workers.
+        # Get the results of the workers.
         if self.workers:
-            if use_ray_compiled_dag:
+            if not self.parallel_config.worker_use_ray:
+                worker_outputs = [output.get() for output in worker_outputs]
+            elif use_ray_compiled_dag:
                 try:
-                    ray_worker_outputs = [
+                    worker_outputs = [
                         pickle.loads(chan.begin_read())
                         for chan in output_channels
                     ]
@@ -1096,9 +1189,9 @@ class LLMEngine:
                     for chan in output_channels:
                         chan.end_read()
             else:
-                ray_worker_outputs = ray.get(ray_worker_outputs)
+                worker_outputs = ray.get(worker_outputs)
 
-        return [driver_worker_output] + ray_worker_outputs
+        return [driver_worker_output] + worker_outputs
 
     def _compiled_ray_dag(self):
         import pkg_resources

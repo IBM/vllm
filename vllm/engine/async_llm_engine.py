@@ -9,7 +9,7 @@ from vllm.lora.request import LoRARequest
 from vllm.config import ModelConfig
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.llm_engine import LLMEngine
-from vllm.engine.ray_utils import initialize_cluster, ray
+from vllm.engine.ray_utils import initialize_ray_cluster, ray
 from vllm.logger import init_logger
 from vllm.outputs import RequestOutput
 from vllm.sampling_params import SamplingParams
@@ -287,9 +287,15 @@ class _AsyncLLMEngine(LLMEngine):
         coros.append(asyncio.get_event_loop().run_in_executor(
             None, partial(driver_executor, *driver_args, **driver_kwargs)))
 
-        # Run the ray workers asynchronously.
-        for worker in self.workers:
-            coros.append(worker.execute_method.remote(method, *args, **kwargs))
+        # Run the workers asynchronously.
+        if self.parallel_config.worker_use_ray:
+            for worker in self.workers:
+                coros.append(
+                    worker.execute_method.remote(method, *args, **kwargs))
+        else:
+            for worker in self.workers:
+                coros.append(
+                    worker.execute_method_async(method, *args, **kwargs))
 
         all_outputs = await asyncio.gather(*coros)
         return all_outputs
@@ -372,8 +378,11 @@ class AsyncLLMEngine:
         self.set_errored(exc)
         self._request_tracker.propagate_exception(exc)
 
+    def get_tokenizer_group(self):
+        return self.engine.tokenizer
+
     def get_tokenizer(self):
-        return self.engine.tokenizer.tokenizer
+        return self.get_tokenizer_group().tokenizer
 
     def start_background_loop(self) -> None:
         """Start the background loop."""
@@ -674,8 +683,8 @@ class AsyncLLMEngine:
         engine_configs = engine_args.create_engine_configs()
         parallel_config = engine_configs[2]
         # Initialize the cluster.
-        placement_group = initialize_cluster(parallel_config,
-                                             engine_args.engine_use_ray)
+        placement_group = initialize_ray_cluster(parallel_config,
+                                                 engine_args.engine_use_ray)
         # Create the async LLM engine.
         engine = cls(parallel_config.worker_use_ray,
                      engine_args.engine_use_ray,

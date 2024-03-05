@@ -59,10 +59,13 @@ class OpenAIServingChat(OpenAIServing):
 
         request_id = f"cmpl-{random_uuid()}"
         try:
-            token_ids = self._validate_prompt_and_tokenize(request,
-                                                           prompt=prompt)
-            sampling_params = request.to_sampling_params()
             lora_request = self._maybe_get_lora(request)
+            token_ids = await self._validate_prompt_and_tokenize(
+                request,
+                request_id=request_id,
+                lora_request=lora_request,
+                prompt=prompt)
+            sampling_params = request.to_sampling_params()
             guided_decode_logits_processor = (
                 await get_guided_decoding_logits_processor(
                     request, self.engine.get_tokenizer()))
@@ -213,7 +216,8 @@ class OpenAIServingChat(OpenAIServing):
                             index=i,
                             delta=DeltaMessage(content=delta_text),
                             logprobs=logprobs,
-                            finish_reason=output.finish_reason)
+                            finish_reason=output.finish_reason,
+                            stop_reason=output.stop_reason)
                         chunk = ChatCompletionStreamResponse(
                             id=request_id,
                             object=chunk_object_type,
@@ -271,6 +275,7 @@ class OpenAIServingChat(OpenAIServing):
                 message=ChatMessage(role=role, content=output.text),
                 logprobs=logprobs,
                 finish_reason=output.finish_reason,
+                stop_reason=output.stop_reason,
             )
             choices.append(choice_data)
 

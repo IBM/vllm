@@ -135,17 +135,18 @@ class OpenAIServingCompletion(OpenAIServing):
             prompt_is_tokens, prompts = parse_prompt_format(request.prompt)
 
             for i, prompt in enumerate(prompts):
-                if prompt_is_tokens:
-                    input_ids = self._validate_prompt_and_tokenize(
-                        request, prompt_ids=prompt)
-                else:
-                    input_ids = self._validate_prompt_and_tokenize(
-                        request, prompt=prompt)
+                sub_request_id = f"{request_id}-{i}"
+                prompt_arg = "prompt_ids" if prompt_is_tokens else "prompt"
+                input_ids = await self._validate_prompt_and_tokenize(
+                    request,
+                    request_id=sub_request_id,
+                    lora_request=lora_request,
+                    **{prompt_arg: prompt})
 
                 generators.append(
                     self.engine.generate(prompt,
                                          sampling_params,
-                                         f"{request_id}-{i}",
+                                         sub_request_id,
                                          prompt_token_ids=input_ids,
                                          lora_request=lora_request))
         except ValueError as e:
@@ -261,6 +262,7 @@ class OpenAIServingCompletion(OpenAIServing):
                     previous_texts[i] = output.text
                     previous_num_tokens[i] = len(output.token_ids)
                     finish_reason = output.finish_reason
+                    stop_reason = output.stop_reason
                     response_json = CompletionStreamResponse(
                         id=request_id,
                         created=created_time,
@@ -271,6 +273,7 @@ class OpenAIServingCompletion(OpenAIServing):
                                 text=delta_text,
                                 logprobs=logprobs,
                                 finish_reason=finish_reason,
+                                stop_reason=stop_reason,
                             )
                         ]).model_dump_json()
                     yield f"data: {response_json}\n\n"
@@ -295,6 +298,7 @@ class OpenAIServingCompletion(OpenAIServing):
                                     text="",
                                     logprobs=logprobs,
                                     finish_reason=output.finish_reason,
+                                    stop_reason=output.stop_reason,
                                 )
                             ],
                             usage=final_usage,
@@ -354,6 +358,7 @@ class OpenAIServingCompletion(OpenAIServing):
                     text=output_text,
                     logprobs=logprobs,
                     finish_reason=output.finish_reason,
+                    stop_reason=output.stop_reason,
                 )
                 choices.append(choice_data)
 
