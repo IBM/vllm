@@ -156,8 +156,8 @@ def in_wsl() -> bool:
 
 
 def make_async(
-        func: Callable[..., T],
-        executor: Optional[Executor] = None,
+    func: Callable[..., T],
+    executor: Optional[Executor] = None,
 ) -> Callable[..., Awaitable[T]]:
     """Take a blocking function, and run it on in an executor thread.
 
