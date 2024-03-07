@@ -11,7 +11,6 @@ from grpc._cython.cygrpc import AbortError
 from grpc.aio import ServicerContext
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
-from vllm.transformers_utils.tokenizer import TokenizerGroup
 from vllm.logger import init_logger
 from vllm.config import ModelConfig
 from vllm.entrypoints.grpc.pb import generation_pb2_grpc
@@ -21,6 +20,8 @@ from vllm.entrypoints.grpc.pb.generation_pb2 import BatchedTokenizeRequest, Batc
 from vllm.entrypoints.openai.serving_completion import merge_async_iterators
 from vllm.sampling_params import LogitsProcessor
 from vllm.tgis_utils.logits_processors import MinTokensLogitsProcessor, TypicalLogitsWarperWrapper
+from vllm.transformers_utils.tokenizer import TokenizerGroup
+from vllm.sequence import Logprob
 from vllm import AsyncLLMEngine, SamplingParams, RequestOutput, CompletionOutput
 
 logger = init_logger(__name__)
@@ -398,7 +399,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
     def _convert_tokens(
         self,
         token_ids: list[int],
-        logprobs_list: Optional[list[Dict[int, float]]],
+        logprobs_list: Optional[list[Dict[int, Logprob]]],
         include_logprobs: bool,
         top_n_tokens: int,
         token_infos: MutableSequence[TokenInfo],  # OUT
@@ -414,20 +415,23 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             token_info = TokenInfo(text=text)
             if logprobs_list is not None:
                 logprobs = logprobs_list[i]
-                if include_logprobs:
-                    token_info.logprob = logprobs[token_ids[i]]
-                if top_n_tokens:
-                    items = sorted(logprobs.items(),
-                                   key=lambda item: item[1],
-                                   reverse=True)[:top_n_tokens]
-                    #TODO later use get_lora_tokenizer here
-                    tt_texts = self.tokenizer.convert_ids_to_tokens(
-                        [tid for tid, _ in items])
-                    token_info.top_tokens.extend(
-                        TokenInfo.TopToken(
-                            text=tt_text,
-                            logprob=logprob,
-                        ) for tt_text, (_, logprob) in zip(tt_texts, items))
+                # Logprobs entry will be None for first prompt token
+                if logprobs is not None:
+                    if include_logprobs:
+                        token_info.logprob = logprobs[token_ids[i]].logprob
+                    if top_n_tokens:
+                        items = sorted(logprobs.items(),
+                                       key=lambda item: item[1].logprob,
+                                       reverse=True)[:top_n_tokens]
+                        #TODO later use get_lora_tokenizer here
+                        tt_texts = self.tokenizer.convert_ids_to_tokens(
+                            [tid for tid, _ in items])
+                        token_info.top_tokens.extend(
+                            TokenInfo.TopToken(
+                                text=tt_text,
+                                logprob=logprob.logprob,
+                            )
+                            for tt_text, (_, logprob) in zip(tt_texts, items))
             token_infos.append(token_info)
 
     async def _validate_prompt_and_tokenize(
