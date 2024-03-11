@@ -118,8 +118,7 @@ class RequestOutput:
                              seq.get_cumulative_logprob(),
                              seq.output_logprobs if include_logprobs else None,
                              SequenceStatus.get_finished_reason(seq.status),
-                             seq.stop_reason)
-            for seq in top_n_seqs
+                             seq.stop_reason) for seq in top_n_seqs
         ]
 
         # Every sequence in the sequence group should have the same prompt.
