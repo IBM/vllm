@@ -347,7 +347,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                 prompt_logprobs=logprobs if resp_options.input_tokens else None,
                 max_tokens=max_new_tokens,
                 min_tokens=min_new_tokens,
-                temperature=sampling.temperature if not greedy else 0.0,
+                temperature=with_default(sampling.temperature, 1.0) if not greedy else 0.0,
                 top_k=with_default(sampling.top_k, -1),
                 top_p=with_default(sampling.top_p, 1.0),
                 seed=sampling.seed if sampling.HasField("seed") else None,
