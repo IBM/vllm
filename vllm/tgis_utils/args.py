@@ -82,7 +82,9 @@ def postprocess_tgis_args(args: argparse.Namespace) -> argparse.Namespace:
         args.model = args.model_name
     if args.max_sequence_length is not None:
         if args.max_model_len not in (None, args.max_sequence_length):
-            raise ValueError("Inconsistent max_model_len and max_sequence_length arg values")
+            raise ValueError(
+                "Inconsistent max_model_len and max_sequence_length arg values"
+            )
         args.max_model_len = args.max_sequence_length
     if args.dtype_str is not None:
         if args.dtype not in (None, 'auto', args.dtype_str):
@@ -96,11 +98,12 @@ def postprocess_tgis_args(args: argparse.Namespace) -> argparse.Namespace:
         if args.num_gpus is not None and args.num_shard is not None \
                 and args.num_gpus != args.num_shard:
             raise ValueError("Inconsistent num_gpus and num_shard arg values")
-        num_gpus = args.num_gpus if args.num_gpus is not None else args.num_shard
+        num_gpus = args.num_gpus if (args.num_gpus
+                                     is not None) else args.num_shard
         if args.tensor_parallel_size not in [None, 1, num_gpus]:
             raise ValueError(
-                "Inconsistent tensor_parallel_size and num_gpus/num_shard arg values"
-            )
+                "Inconsistent tensor_parallel_size and num_gpus/num_shard "
+                "arg values")
         args.tensor_parallel_size = num_gpus
 
     return args

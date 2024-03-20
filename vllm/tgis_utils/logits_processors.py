@@ -1,21 +1,7 @@
-from typing import List, Union
+from typing import List
 
 import torch
 from transformers.generation.logits_process import TypicalLogitsWarper
-
-
-class MinTokensLogitsProcessor:
-
-    def __init__(self, min_tokens: int, eos_token_id: Union[int, List[int]]):
-        self.min_tokens = min_tokens
-        self.eos_token_ids = torch.tensor(eos_token_id)
-
-    def __call__(self, token_ids: List[int],
-                 logits: torch.tensor) -> torch.tensor:
-        # token_ids is only output tokens
-        if len(token_ids) < self.min_tokens:
-            logits[self.eos_token_ids] = -float("inf")
-        return logits
 
 
 class TypicalLogitsWarperWrapper:

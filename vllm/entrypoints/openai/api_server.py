@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 from contextlib import asynccontextmanager
 import os
@@ -65,7 +66,6 @@ def parse_args():
     parsed_args = parser.parse_args()
     parsed_args = postprocess_tgis_args(parsed_args)
     return parsed_args
-
 
 
 # Add prometheus asgi middleware to route /metrics requests
