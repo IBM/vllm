@@ -158,6 +158,8 @@ class LLMEngine:
         # Shutdown model executor when engine is garbage collected
         if self.model_executor is not None:
             self.model_executor.shutdown()
+    def get_tokenizer_group(self) -> BaseTokenizerGroup:
+        return self.tokenizer
 
     def get_tokenizer(self) -> "PreTrainedTokenizer":
         return self.tokenizer.get_lora_tokenizer()
