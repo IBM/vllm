@@ -3,7 +3,7 @@ import os
 import re
 import subprocess
 import sys
-from typing import List
+from typing import List, Optional, Dict
 
 from packaging.version import parse, Version
 from setuptools import setup, find_packages, Extension
@@ -318,6 +318,12 @@ def get_requirements() -> List[str]:
     return requirements
 
 
+def get_ray_requirement() -> Optional[Dict[str, List[str]]]:
+    if _is_neuron():
+        return None
+    return {"ray": ["ray >= 2.9"]}
+
+
 ext_modules = []
 
 if _is_cuda():
@@ -361,6 +367,7 @@ setup(
                                     "tests")),
     python_requires=">=3.8",
     install_requires=get_requirements(),
+    extras_requires=get_ray_requirement(),
     ext_modules=ext_modules,
     cmdclass={"build_ext": cmake_build_ext} if not _is_neuron() else {},
     package_data=package_data,
