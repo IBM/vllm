@@ -74,8 +74,17 @@ git branch -D ephemeral || git branch -f ephemeral HEAD
 git checkout ephemeral
 
 # for each ${PR_NUMBER} to squash in:
+# We first fetch the PR head from vLLM
 git fetch upstream pull/${PR_NUMBER}/head:${PR_NUMBER}
+# Then we want to squash-merge on top of vLLM:main
+git checkout upstream/main
 git merge --squash ${PR_NUMBER}
+# (Resolve any conflicts here)
+git commit -m "Squash ${PR_NUMBER}"
+# Then we want to apply that squash commit with only that PR's changes to `ephemeral`
+export SQUASH_HEAD=$(git rev-parse --short HEAD)
+git checkout ephemeral
+git cherry-pick $SQUASH_HEAD
 # Merge conflicts should be minimal if all PRs are in a mergeable state with vllm:main
 # But pending PRs may create conflicting changes with each other 
 
