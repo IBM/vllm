@@ -268,6 +268,7 @@ class OpenAIServingCompletion(OpenAIServing):
                     previous_texts[i] = output.text
                     previous_num_tokens[i] = len(output.token_ids)
                     finish_reason = output.finish_reason
+                    stop_reason = output.stop_reason
                     response_json = CompletionStreamResponse(
                         id=request_id,
                         created=created_time,
@@ -278,6 +279,7 @@ class OpenAIServingCompletion(OpenAIServing):
                                 text=delta_text,
                                 logprobs=logprobs,
                                 finish_reason=finish_reason,
+                                stop_reason=stop_reason,
                             )
                         ]).model_dump_json()
                     yield f"data: {response_json}\n\n"
@@ -302,6 +304,7 @@ class OpenAIServingCompletion(OpenAIServing):
                                     text="",
                                     logprobs=logprobs,
                                     finish_reason=output.finish_reason,
+                                    stop_reason=output.stop_reason,
                                 )
                             ],
                             usage=final_usage,
@@ -358,6 +361,7 @@ class OpenAIServingCompletion(OpenAIServing):
                     text=output_text,
                     logprobs=logprobs,
                     finish_reason=output.finish_reason,
+                    stop_reason=output.stop_reason,
                 )
                 choices.append(choice_data)
 
