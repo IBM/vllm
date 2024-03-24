@@ -281,9 +281,8 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                     raise ValueError(f"max_new_tokens ({max_new_tokens}) "
                                      f"must be <= {self.max_max_new_tokens}")
 
-            min_new_tokens = -1
-            if stopping.min_new_tokens > 0:
-                min_new_tokens = stopping.min_new_tokens
+            min_new_tokens = max(0, stopping.min_new_tokens)
+            if min_new_tokens > 0:
                 if max_new_tokens is not None:
                     if min_new_tokens > max_new_tokens:
                         raise ValueError(
