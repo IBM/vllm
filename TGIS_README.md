@@ -75,6 +75,7 @@ git checkout ephemeral
 
 # for each ${PR_NUMBER} to squash in:
 # We first fetch the PR head from vLLM
+git branch -D ${PR_NUMBER}
 git fetch upstream pull/${PR_NUMBER}/head:${PR_NUMBER}
 # Then we want to squash-merge on top of vLLM:main
 git checkout upstream/main
