@@ -48,7 +48,7 @@ git fetch upstream main
 git checkout upstream/main
 
 # point a branch here
-git branch -D upstream-main-sync || git branch -f upstream-main-sync HEAD
+git branch -f upstream-main-sync HEAD
 git checkout upstream-main-sync
 
 # rebase the branch onto ibm main
@@ -70,7 +70,7 @@ git fetch origin main
 git checkout origin/main
 
 # Start a new ephemeral branch here
-git branch -D ephemeral || git branch -f ephemeral HEAD
+git branch -f ephemeral HEAD
 git checkout ephemeral
 
 # for each ${PR_NUMBER} to squash in:
