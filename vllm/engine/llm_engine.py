@@ -1,23 +1,23 @@
 import time
-from typing import Dict, Iterable, List, Optional, Tuple, Type, Union
+from typing import Iterable, List, Optional, Tuple, Type, Union
 
 from transformers import PreTrainedTokenizer
 
 import vllm
-from vllm.lora.request import LoRARequest
-from vllm.config import (CacheConfig, DeviceConfig, ModelConfig,
-                         ParallelConfig, SchedulerConfig, LoRAConfig)
+from vllm.config import (CacheConfig, DeviceConfig, LoRAConfig, ModelConfig,
+                         ParallelConfig, SchedulerConfig)
 from vllm.core.scheduler import Scheduler, SchedulerOutputs
 from vllm.engine.arg_utils import EngineArgs
-from vllm.executor.executor_base import ExecutorBase
 from vllm.engine.metrics import StatLogger, Stats
 from vllm.engine.ray_utils import initialize_ray_cluster
+from vllm.executor.executor_base import ExecutorBase
 from vllm.logger import init_logger
+from vllm.lora.request import LoRARequest
 from vllm.outputs import RequestOutput
 from vllm.sampling_params import SamplingParams
-from vllm.sequence import (Logprob, SamplerOutput, Sequence, SequenceGroup,
+from vllm.sequence import (SamplerOutput, Sequence, SequenceGroup,
                            SequenceGroupOutput, SequenceOutput, SequenceStatus)
-from vllm.transformers_utils.tokenizer import detokenize_incrementally
+from vllm.transformers_utils.detokenizer import Detokenizer
 from vllm.transformers_utils.tokenizer_group import (BaseTokenizerGroup,
                                                      get_tokenizer_group)
 from vllm.utils import Counter
@@ -97,6 +97,7 @@ class LLMEngine:
         self._verify_args()
 
         self._init_tokenizer()
+        self.detokenizer = Detokenizer(self.tokenizer)
         self.seq_counter = Counter()
 
         self.model_executor = executor_class(model_config, cache_config,
@@ -125,9 +126,13 @@ class LLMEngine:
         # Create the engine configs.
         engine_configs = engine_args.create_engine_configs()
         parallel_config = engine_configs[2]
+        device_config = engine_configs[4]
 
         # Initialize the cluster and specify the executor class.
-        if parallel_config.worker_use_ray:
+        if device_config.device_type == "neuron":
+            from vllm.executor.neuron_executor import NeuronExecutor
+            executor_class = NeuronExecutor
+        elif parallel_config.worker_use_ray:
             initialize_ray_cluster(parallel_config)
             from vllm.executor.ray_gpu_executor import RayGPUExecutor
             executor_class = RayGPUExecutor
@@ -149,7 +154,7 @@ class LLMEngine:
         raise RuntimeError("LLMEngine should not be pickled!")
 
     def get_tokenizer(self) -> "PreTrainedTokenizer":
-        return self.tokenizer.get_lora_tokenizer()
+        return self.tokenizer.get_lora_tokenizer(None)
 
     def get_tokenizer_for_seq(self,
                               sequence: Sequence) -> "PreTrainedTokenizer":
@@ -168,6 +173,14 @@ class LLMEngine:
 
         self.tokenizer: BaseTokenizerGroup = get_tokenizer_group(
             self.parallel_config.tokenizer_pool_config, **init_kwargs)
+
+        if len(self.get_tokenizer()) != self.model_config.get_vocab_size():
+            logger.warning(
+                f"The tokenizer's vocabulary size {len(self.get_tokenizer())}"
+                f" does not match the model's vocabulary size "
+                f"{self.model_config.get_vocab_size()}. This might "
+                f"cause an error in decoding. Please change config.json "
+                "to match the tokenizer's vocabulary size.")
 
     def _verify_args(self) -> None:
         self.model_config.verify_with_parallel_config(self.parallel_config)
@@ -269,6 +282,9 @@ class LLMEngine:
         # Defensive copy of SamplingParams, which are used by the sampler,
         # this doesn't deep-copy LogitsProcessor objects
         sampling_params = sampling_params.clone()
+        # inject the eos token id into the sampling_params to support min_tokens
+        # processing
+        sampling_params.eos_token_id = seq.eos_token_id
 
         # Create the sequence group.
         seq_group = SequenceGroup(request_id, [seq], sampling_params,
@@ -358,13 +374,8 @@ class LLMEngine:
         # Process prompt logprobs
         prompt_logprobs = outputs.prompt_logprobs
         if prompt_logprobs is not None:
-            # We can pick any sequence for the prompt.
-            seq = next(iter(seq_group.seqs_dict.values()))
-            all_token_ids = seq.get_token_ids()
-            for i, prompt_logprobs_for_token in enumerate(prompt_logprobs):
-                self._decode_logprobs(seq, seq_group.sampling_params,
-                                      prompt_logprobs_for_token,
-                                      all_token_ids[:i])
+            self.detokenizer.decode_prompt_logprobs_inplace(
+                seq_group, prompt_logprobs)
             seq_group.prompt_logprobs = prompt_logprobs
 
         # Process samples
@@ -408,7 +419,8 @@ class LLMEngine:
             child_seqs.append((parent, parent))
 
         for seq, _ in child_seqs:
-            self._decode_sequence(seq, seq_group.sampling_params)
+            self.detokenizer.decode_sequence_inplace(seq,
+                                                     seq_group.sampling_params)
             self._check_stop(seq, seq_group.sampling_params)
 
         # Non-beam search case
@@ -561,7 +573,6 @@ class LLMEngine:
         # Log stats.
         if self.log_stats:
             self.stat_logger.log(self._get_stats(scheduler_outputs))
-
         return request_outputs
 
     def step(self) -> List[RequestOutput]:
@@ -702,54 +713,24 @@ class LLMEngine:
             time_e2e_requests=time_e2e_requests,
         )
 
-    def _decode_logprobs(self, seq: Sequence, prms: SamplingParams,
-                         logprobs: Dict[int, Logprob],
-                         all_input_ids: List[int]) -> None:
-        if not logprobs:
-            return
-        for token_id, sample_logprob in logprobs.items():
-            if (sample_logprob.decoded_token is None and token_id != -1):
-                all_input_ids_with_logprob = all_input_ids[:-1] + [token_id]
-                (_, new_text, prefix_offset,
-                 read_offset) = detokenize_incrementally(
-                     self.get_tokenizer_for_seq(seq),
-                     all_input_ids=all_input_ids_with_logprob,
-                     prev_tokens=seq.tokens,
-                     prefix_offset=seq.prefix_offset,
-                     read_offset=seq.read_offset,
-                     skip_special_tokens=prms.skip_special_tokens,
-                     spaces_between_special_tokens=prms.
-                     spaces_between_special_tokens,
-                 )
-                sample_logprob.decoded_token = new_text
-
-    def _decode_sequence(self, seq: Sequence, prms: SamplingParams) -> None:
-        """Decodes the new token for a sequence."""
-        all_input_ids = seq.get_token_ids()
-        self._decode_logprobs(seq, prms, seq.output_logprobs[-1],
-                              all_input_ids)
-
-        (new_tokens, new_output_text, prefix_offset,
-         read_offset) = detokenize_incrementally(
-             self.get_tokenizer_for_seq(seq),
-             all_input_ids=all_input_ids,
-             prev_tokens=seq.tokens,
-             prefix_offset=seq.prefix_offset,
-             read_offset=seq.read_offset,
-             skip_special_tokens=prms.skip_special_tokens,
-             spaces_between_special_tokens=prms.spaces_between_special_tokens,
-         )
-        if seq.tokens is None:
-            seq.tokens = new_tokens
-        else:
-            seq.tokens.extend(new_tokens)
-        seq.prefix_offset = prefix_offset
-        seq.read_offset = read_offset
-        seq.output_text += new_output_text
-
     def _check_stop(self, seq: Sequence,
                     sampling_params: SamplingParams) -> None:
         """Stop the finished sequences."""
+        # Check if the sequence has reached max_model_len.
+        if seq.get_len() > self.scheduler_config.max_model_len:
+            seq.status = SequenceStatus.FINISHED_LENGTH_CAPPED
+            return
+
+        # Check if the sequence has reached max_tokens.
+        if seq.get_output_len() == sampling_params.max_tokens:
+            seq.status = SequenceStatus.FINISHED_LENGTH_CAPPED
+            return
+
+        # Check if the minimum number of tokens has been generated yet;
+        # skip the stop string/token checks if not
+        if seq.get_output_len() < sampling_params.min_tokens:
+            return
+
         for stop_str in sampling_params.stop:
             if seq.output_text.endswith(stop_str):
                 self._finalize_sequence(seq, sampling_params, stop_str)
@@ -760,16 +741,6 @@ class LLMEngine:
                 seq.get_last_token_id())
             self._finalize_sequence(seq, sampling_params, stop_str)
             seq.status = SequenceStatus.FINISHED_STOPPED
-            return
-
-        # Check if the sequence has reached max_model_len.
-        if seq.get_len() > self.scheduler_config.max_model_len:
-            seq.status = SequenceStatus.FINISHED_LENGTH_CAPPED
-            return
-
-        # Check if the sequence has reached max_tokens.
-        if seq.get_output_len() == sampling_params.max_tokens:
-            seq.status = SequenceStatus.FINISHED_LENGTH_CAPPED
             return
 
         # Check if the sequence has generated the EOS token.

@@ -1,8 +1,8 @@
 import torch
 
 from vllm.engine.arg_utils import EngineArgs
-from vllm.worker.worker import Worker
 from vllm.utils import get_distributed_init_method, get_ip, get_open_port
+from vllm.worker.worker import Worker
 
 
 def test_swap() -> None:
@@ -30,7 +30,7 @@ def test_swap() -> None:
     )
 
     # Initialize the worker.
-    worker.init_model()
+    worker.init_device()
     worker.load_model()
     worker.init_cache_engine(cache_config)
     worker.warm_up_model()

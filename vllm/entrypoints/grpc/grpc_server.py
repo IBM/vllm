@@ -23,7 +23,7 @@ from vllm.entrypoints.grpc.pb.generation_pb2 import (
     StopReason, TokenInfo, Parameters, DecodingMethod, ResponseOptions)
 from vllm.entrypoints.openai.serving_completion import merge_async_iterators
 from vllm.tgis_utils.logits_processors import TypicalLogitsWarperWrapper
-from vllm.transformers_utils.tokenizer import TokenizerGroup
+from vllm.transformers_utils.tokenizer_group import BaseTokenizerGroup
 from vllm.sequence import Logprob
 from vllm import (AsyncLLMEngine, SamplingParams, RequestOutput,
                   CompletionOutput)
@@ -76,10 +76,11 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
 
     def __init__(self, engine: AsyncLLMEngine, args: argparse.Namespace):
         self.engine: AsyncLLMEngine = engine
-        self.tokenizer_group: TokenizerGroup = engine.get_tokenizer_group()
-        self.tokenizer: Union[
-            PreTrainedTokenizer,
-            PreTrainedTokenizerFast] = self.tokenizer_group.tokenizer
+
+        # These set in _post_init()
+        self.tokenizer_group: BaseTokenizerGroup = None
+        self.tokenizer: Union[PreTrainedTokenizer,
+                              PreTrainedTokenizerFast] = None
         self.config: ModelConfig = None
 
         self.max_max_new_tokens = args.max_new_tokens
@@ -88,6 +89,8 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
 
     async def _post_init(self):
         self.config = await self.engine.get_model_config()
+        self.tokenizer_group = await self.engine.get_tokenizer_group()
+        self.tokenizer = await self.engine.get_tokenizer()
 
     @log_rpc_handler_errors
     async def Generate(self, request: BatchedGenerationRequest,
@@ -278,9 +281,8 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                     raise ValueError(f"max_new_tokens ({max_new_tokens}) "
                                      f"must be <= {self.max_max_new_tokens}")
 
-            min_new_tokens = -1
-            if stopping.min_new_tokens > 0:
-                min_new_tokens = stopping.min_new_tokens
+            min_new_tokens = max(0, stopping.min_new_tokens)
+            if min_new_tokens > 0:
                 if max_new_tokens is not None:
                     if min_new_tokens > max_new_tokens:
                         raise ValueError(
