@@ -2,31 +2,37 @@ import argparse
 import inspect
 import time
 import uuid
+from typing import (Any, AsyncIterator, Dict, List, MutableSequence, Optional,
+                    Tuple, Union)
 
 import grpc
-from grpc import aio, StatusCode
-
-from typing import (Optional, AsyncIterator, Dict, MutableSequence, Any, Union,
-                    Tuple, List)
-
+from grpc import StatusCode, aio
 from grpc._cython.cygrpc import AbortError
 from grpc.aio import ServicerContext
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
-from vllm.logger import init_logger
+from vllm import (AsyncLLMEngine, CompletionOutput, RequestOutput,
+                  SamplingParams)
 from vllm.config import ModelConfig
 from vllm.entrypoints.grpc.pb import generation_pb2_grpc
-from vllm.entrypoints.grpc.pb.generation_pb2 import (
-    BatchedTokenizeRequest, BatchedGenerationRequest, SingleGenerationRequest,
-    ModelInfoRequest, BatchedTokenizeResponse, TokenizeResponse,
-    ModelInfoResponse, GenerationResponse, BatchedGenerationResponse,
-    StopReason, TokenInfo, Parameters, DecodingMethod, ResponseOptions)
+from vllm.entrypoints.grpc.pb.generation_pb2 import (BatchedGenerationRequest,
+                                                     BatchedGenerationResponse,
+                                                     BatchedTokenizeRequest,
+                                                     BatchedTokenizeResponse,
+                                                     DecodingMethod,
+                                                     GenerationResponse,
+                                                     ModelInfoRequest,
+                                                     ModelInfoResponse,
+                                                     Parameters,
+                                                     ResponseOptions,
+                                                     SingleGenerationRequest,
+                                                     StopReason, TokenInfo,
+                                                     TokenizeResponse)
 from vllm.entrypoints.openai.serving_completion import merge_async_iterators
+from vllm.logger import init_logger
+from vllm.sequence import Logprob
 from vllm.tgis_utils.logits_processors import TypicalLogitsWarperWrapper
 from vllm.transformers_utils.tokenizer_group import BaseTokenizerGroup
-from vllm.sequence import Logprob
-from vllm import (AsyncLLMEngine, SamplingParams, RequestOutput,
-                  CompletionOutput)
 
 logger = init_logger(__name__)
 
