@@ -63,13 +63,14 @@ git push origin HEAD:main
 
 To rebuild the ephemeral branch, we want to squash each pending PR into a commit on top of main.
 
-Assuming this repo is the `origin` remote, this looks something like:
+Assuming this repo is the `origin` remote and vllm-project/vllm is `upstream`, this looks something like:
 ```shell
-# Fetch latest main
+# Fetch latest mains
+git fetch upstream main
 git fetch origin main
 git checkout origin/main
 
-# Start a new ephemeral branch here
+# Start a new ephemeral branch here at ibm:main
 git branch -f ephemeral HEAD
 git checkout ephemeral
 
@@ -91,4 +92,8 @@ git cherry-pick $SQUASH_HEAD
 
 # force-push: we're overwriting the `ephemeral` branch
 git push -f origin HEAD:ephemeral
+
+# Create a tag to save this build
+git tag ephemeral.$(git rev-parse --short HEAD)
+git push origin ephemeral.$(git rev-parse --short HEAD)
 ```
