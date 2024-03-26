@@ -5,7 +5,7 @@ on:
 
   push:
     branches:
-      - ephemeral
+      - release
     paths-ignore:
       - "**.md"
       - "proto/**"
