@@ -29,7 +29,7 @@ from vllm.entrypoints.grpc.pb.generation_pb2 import (BatchedGenerationRequest,
                                                      SingleGenerationRequest,
                                                      StopReason, TokenInfo,
                                                      TokenizeResponse)
-from vllm.entrypoints.grpc.validation import validate_params
+from vllm.entrypoints.grpc.validation import validate_params, validate_input
 from vllm.entrypoints.openai.serving_completion import merge_async_iterators
 from vllm.tgis_utils.logits_processors import TypicalLogitsWarperWrapper
 from vllm.transformers_utils.tokenizer_group import BaseTokenizerGroup
@@ -445,16 +445,10 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             prompt, **tokenize_kwargs)
         token_num = len(input_ids)
 
-        if token_num >= max_model_len:
-            await context.abort(
-                StatusCode.INVALID_ARGUMENT,
-                f"input tokens ({token_num}) must be < {max_model_len}")
-        min_new_tokens = sampling_params.min_tokens
-        if token_num + min_new_tokens > max_model_len:
-            await context.abort(
-                StatusCode.INVALID_ARGUMENT,
-                f"input tokens ({token_num}) plus min_new_tokens "
-                f"({min_new_tokens}) must be <= {max_model_len}")
+        try:
+            validate_input(sampling_params, token_num, max_model_len)
+        except ValueError as tgis_validation_error:
+            await context.abort(StatusCode.INVALID_ARGUMENT, str(tgis_validation_error))
 
         max_new_tokens: Optional[int] = sampling_params.max_tokens
         max_is_token_limit = False
