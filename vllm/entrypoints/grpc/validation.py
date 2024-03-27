@@ -65,7 +65,7 @@ def validate_params(params: Parameters, max_max_new_tokens: int):
     if decoding.HasField("length_penalty"):
         # TODO: remove this when we support length penalty
         TGISValidationError.LengthPenaltyUnsupported.error()
-        if decoding.length_penalty < 1 or decoding.length_penalty > 10:
+        if decoding.length_penalty.decay_factor < 1.0 or decoding.length_penalty.decay_factor > 10.0:
             TGISValidationError.LengthPenalty.error()
 
     if decoding.repetition_penalty < 0:
@@ -77,7 +77,7 @@ def validate_params(params: Parameters, max_max_new_tokens: int):
         if stopping.max_new_tokens > max_max_new_tokens:
             TGISValidationError.MaxNewTokens.error(max_max_new_tokens)
 
-    if stopping.min_new_tokens > stopping.max_new_tokens:
+    if stopping.max_new_tokens and stopping.min_new_tokens > stopping.max_new_tokens:
         TGISValidationError.MinNewTokens.error()
 
     if stopping.stop_sequences and (
