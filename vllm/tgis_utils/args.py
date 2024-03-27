@@ -92,7 +92,7 @@ def postprocess_tgis_args(args: argparse.Namespace) -> argparse.Namespace:
         args.dtype = args.dtype_str
     if args.quantize:
         if args.quantization and args.quantization != args.quantize:
-            raise ValueError("Inconsistent dtype and dtype_str arg values")
+            raise ValueError("Inconsistent quantize and quantization arg values")
         args.quantization = args.quantize
     if args.num_gpus is not None or args.num_shard is not None:
         if args.num_gpus is not None and args.num_shard is not None \
