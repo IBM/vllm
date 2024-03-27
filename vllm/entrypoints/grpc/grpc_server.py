@@ -16,11 +16,20 @@ from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 from vllm.logger import init_logger
 from vllm.config import ModelConfig
 from vllm.entrypoints.grpc.pb import generation_pb2_grpc
-from vllm.entrypoints.grpc.pb.generation_pb2 import (
-    BatchedTokenizeRequest, BatchedGenerationRequest, SingleGenerationRequest,
-    ModelInfoRequest, BatchedTokenizeResponse, TokenizeResponse,
-    ModelInfoResponse, GenerationResponse, BatchedGenerationResponse,
-    StopReason, TokenInfo, Parameters, DecodingMethod, ResponseOptions)
+from vllm.entrypoints.grpc.pb.generation_pb2 import (BatchedGenerationRequest,
+                                                     BatchedGenerationResponse,
+                                                     BatchedTokenizeRequest,
+                                                     BatchedTokenizeResponse,
+                                                     DecodingMethod,
+                                                     GenerationResponse,
+                                                     ModelInfoRequest,
+                                                     ModelInfoResponse,
+                                                     Parameters,
+                                                     ResponseOptions,
+                                                     SingleGenerationRequest,
+                                                     StopReason, TokenInfo,
+                                                     TokenizeResponse)
+from vllm.entrypoints.grpc.validation import validate_params
 from vllm.entrypoints.openai.serving_completion import merge_async_iterators
 from vllm.tgis_utils.logits_processors import TypicalLogitsWarperWrapper
 from vllm.transformers_utils.tokenizer_group import BaseTokenizerGroup
@@ -262,90 +271,62 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             self, params: Parameters, context: ServicerContext
     ) -> Tuple[SamplingParams, Optional[float]]:
         """ Returns (sampling_params, deadline) """
+        # First run TGIS validation to raise errors that match the TGIS api
+        try:
+            validate_params(params, self.max_max_new_tokens)
+        except ValueError as tgis_validation_error:
+            await context.abort(StatusCode.INVALID_ARGUMENT, str(tgis_validation_error))
 
         resp_options = params.response
         sampling = params.sampling
         stopping = params.stopping
         greedy = params.method == DecodingMethod.GREEDY
 
+        max_new_tokens: Optional[int] = None
+        if stopping.max_new_tokens > 0:
+            max_new_tokens = stopping.max_new_tokens
+        min_new_tokens = max(0, stopping.min_new_tokens)
+
+        logprobs = 1 if (resp_options.token_logprobs
+                         or resp_options.token_ranks) else 0
+        top_n_tokens = resp_options.top_n_tokens
+        if top_n_tokens:
+            # vLLM will currently return logprobs for n+1 tokens
+            # (selected token plus top_n excluding selected)
+            logprobs += top_n_tokens
+            if greedy and resp_options.token_logprobs:
+                logprobs -= 1
+
+        logprobs = with_default(logprobs, None)
+
+        # GAPS:
+        # - exp_decay_length_penalty
+
+        # NEW FUNCTION TO ADD (later)
+        # - presence penalty, freq penalty
+        # - min_p
+        # - beam search (with length_penalty, stop_early, n)
+
+        # TBD (investigate more)
+        # - best_of / n
+        # - spaces_between_special_tokens
+        # - skip_special_tokens (per request)
+        # - stop_token_ids
+
+        # to match TGIS, only including typical_p processing
+        # when using sampling
+        if not greedy and 0.0 < sampling.typical_p < 1.0:
+            logits_processors = [
+                TypicalLogitsWarperWrapper(mass=sampling.typical_p)
+            ]
+        else:
+            logits_processors = None
+
+        time_limit_millis = stopping.time_limit_millis
+        deadline = time.time(
+        ) + time_limit_millis / 1000.0 if time_limit_millis > 0 else None
+
         try:
-            if params.decoding.HasField("length_penalty"):
-                raise ValueError(
-                    "decoding.length_penalty parameter not yet supported")
-
-            # default max may be limited further in later processing
-            max_new_tokens: Optional[int] = None
-            if stopping.max_new_tokens > 0:
-                max_new_tokens = stopping.max_new_tokens
-                if max_new_tokens > self.max_max_new_tokens:
-                    raise ValueError(f"max_new_tokens ({max_new_tokens}) "
-                                     f"must be <= {self.max_max_new_tokens}")
-
-            min_new_tokens = max(0, stopping.min_new_tokens)
-            if min_new_tokens > 0:
-                if max_new_tokens is not None:
-                    if min_new_tokens > max_new_tokens:
-                        raise ValueError(
-                            f"min_new_tokens ({min_new_tokens}) "
-                            f"must be <= max_new_tokens ({max_new_tokens})")
-                elif min_new_tokens > self.max_max_new_tokens:
-                    raise ValueError(f"min_new_tokens ({min_new_tokens}) "
-                                     f"must be <= {self.max_max_new_tokens}")
-
-            if stopping.stop_sequences and (
-                    len(stopping.stop_sequences) > MAX_STOP_SEQS) or \
-                    not all(0 < len(ss) <= MAX_STOP_SEQ_LENGTH
-                            for ss in stopping.stop_sequences):
-                raise ValueError(
-                    f"can specify at most {MAX_STOP_SEQS} non-empty stop "
-                    f"sequences, each not more than {MAX_STOP_SEQ_LENGTH} "
-                    f"UTF8 bytes")
-
-            # TODO more parameter validation
-
-            logprobs = 1 if (resp_options.token_logprobs
-                             or resp_options.token_ranks) else 0
-            top_n_tokens = resp_options.top_n_tokens
-            if top_n_tokens:
-                if top_n_tokens > MAX_TOP_N_TOKENS:
-                    raise ValueError(f"top_n_tokens ({top_n_tokens}) "
-                                     f"must be <= {MAX_TOP_N_TOKENS}")
-
-                # vLLM will currently return logprobs for n+1 tokens
-                # (selected token plus top_n excluding selected)
-                logprobs += top_n_tokens
-                if greedy and resp_options.token_logprobs:
-                    logprobs -= 1
-
-            logprobs = with_default(logprobs, None)
-
-            # GAPS:
-            # - exp_decay_length_penalty
-
-            # NEW FUNCTION TO ADD (later)
-            # - presence penalty, freq penalty
-            # - min_p
-            # - beam search (with length_penalty, stop_early, n)
-
-            # TBD (investigate more)
-            # - best_of / n
-            # - spaces_between_special_tokens
-            # - skip_special_tokens (per request)
-            # - stop_token_ids
-
-            # to match TGIS, only including typical_p processing
-            # when using sampling
-            if not greedy and 0.0 < sampling.typical_p < 1.0:
-                logits_processors = [
-                    TypicalLogitsWarperWrapper(mass=sampling.typical_p)
-                ]
-            else:
-                logits_processors = None
-
-            time_limit_millis = stopping.time_limit_millis
-            deadline = time.time(
-            ) + time_limit_millis / 1000.0 if time_limit_millis > 0 else None
-
             sampling_params = SamplingParams(
                 logprobs=logprobs,
                 prompt_logprobs=logprobs
@@ -366,9 +347,9 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                 self.default_include_stop_seqs,
                 skip_special_tokens=self.skip_special_tokens,
             )
-        except ValueError as e:
-            #TODO run TGIS param validation here to match TGIS error messages
-            await context.abort(StatusCode.INVALID_ARGUMENT, str(e))
+        except ValueError as vllm_validation_error:
+            # There may be validation cases caught by vLLM that are not covered by the TGIS api validation
+            await context.abort(StatusCode.INVALID_ARGUMENT, str(vllm_validation_error))
 
         return sampling_params, deadline
 
