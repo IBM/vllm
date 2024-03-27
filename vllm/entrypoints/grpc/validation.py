@@ -39,7 +39,7 @@ class TGISValidationError(str, Enum):
 
     def error(self, *args, **kwargs):
         """Raises a ValueError with a nicely formatted string"""
-        raise ValueError(self.format(*args, **kwargs))
+        raise ValueError(self.value.format(*args, **kwargs))
 
 
 def validate_input(sampling_params: SamplingParams, token_num: int, max_model_len: int):
