@@ -1,6 +1,10 @@
 import argparse
 import os
 
+from vllm.entrypoints.grpc.validation import MAX_TOP_N_TOKENS
+from vllm.logger import init_logger
+
+logger = init_logger(__name__)
 
 def _to_env_var(arg_name: str):
     return arg_name.upper().replace("-", "_")
@@ -105,5 +109,8 @@ def postprocess_tgis_args(args: argparse.Namespace) -> argparse.Namespace:
                 "Inconsistent tensor_parallel_size and num_gpus/num_shard "
                 "arg values")
         args.tensor_parallel_size = num_gpus
+    if args.max_logprobs < MAX_TOP_N_TOKENS + 1:
+        logger.info("Setting max_logprobs to %d", MAX_TOP_N_TOKENS + 1)
+        args.max_logprobs = MAX_TOP_N_TOKENS + 1
 
     return args
