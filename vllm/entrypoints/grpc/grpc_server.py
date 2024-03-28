@@ -461,13 +461,26 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         prompt: Optional[str],
         context: ServicerContext,
     ) -> Tuple[List[int], bool]:
-        tokenize_kwargs = {"truncation": True,
-                           "max_length": truncate_input_tokens} \
-            if truncate_input_tokens is not None else {}
-
         max_model_len = self.config.max_model_len
+        # tokenize_kwargs = {"truncation": True,
+        #                    "max_length": truncate_input_tokens} \
+        #     if truncate_input_tokens is not None else {
+        #       "truncation": True, "max_length": max_model_len + 1}
+        tokenize_kwargs = {}
+
         input_ids = await self.tokenizer_group.encode_async(
             prompt, **tokenize_kwargs)
+
+        #TODO this is temporary until truncation option is added
+        # to the TokenizerGroup encode methods
+        if truncate_input_tokens and truncate_input_tokens < len(input_ids):
+            input_ids = input_ids[-truncate_input_tokens:]
+            if not sampling_params.skip_special_tokens:
+                add_bos_token = getattr(self.tokenizer, "add_bos_token", False)
+                if add_bos_token:
+                    input_ids[0] = self.tokenizer.bos_token_id
+        # -----------------------------------------------
+
         token_num = len(input_ids)
 
         if token_num >= max_model_len:
