@@ -37,11 +37,6 @@ from vllm.transformers_utils.tokenizer_group import BaseTokenizerGroup
 
 logger = init_logger(__name__)
 
-MAX_TOP_N_TOKENS = 10
-
-MAX_STOP_SEQS = 6
-MAX_STOP_SEQ_LENGTH = 240
-
 
 def with_default(value: Any, default: Any) -> Any:
     return value if value else default
