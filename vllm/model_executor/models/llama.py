@@ -265,6 +265,14 @@ class LlamaModel(nn.Module):
             hidden_states = inputs_embeds
         else:
             hidden_states = self.get_input_embeddings(input_ids)
+        
+        if hasattr(self, 'prefix_encoder'):
+            pe = self.prefix_encoder.prompt_embedding.repeat(
+                hidden_states.size(0), 1, 1)
+            hidden_states[:, :self.prefix_encoder.num_virtual_tokens, :] = pe
+        else:
+            pass
+        
         residual = None
         for i in range(len(self.layers)):
             layer = self.layers[i]

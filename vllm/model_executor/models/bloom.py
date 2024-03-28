@@ -245,6 +245,12 @@ class BloomModel(nn.Module):
         attn_metadata: AttentionMetadata,
     ) -> torch.Tensor:
         hidden_states = self.word_embeddings(input_ids)
+        if hasattr(self, 'prefix_encoder'):
+            pe = self.prefix_encoder.prompt_embedding.repeat(
+                hidden_states.size(0), 1, 1)
+            hidden_states[:, :self.prefix_encoder.num_virtual_tokens, :] = pe
+        else:
+            pass
         hidden_states = self.word_embeddings_layernorm(hidden_states)
         for i in range(len(self.h)):
             layer = self.h[i]

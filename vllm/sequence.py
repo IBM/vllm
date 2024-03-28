@@ -6,7 +6,9 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Union
 
 from vllm.block import LogicalTokenBlock
 from vllm.lora.request import LoRARequest
+from vllm.prompt_adapter.request import PromptAdapterRequest
 from vllm.sampling_params import SamplingParams
+
 
 if TYPE_CHECKING:
     import torch
@@ -158,6 +160,7 @@ class Sequence:
         block_size: The block size of the sequence. Should be the same as the
             block size used by the block manager and cache engine.
         lora_request: LoRA request.
+        prompt_adapter_request: PromptAdapter request.
     """
 
     def __init__(
@@ -168,12 +171,18 @@ class Sequence:
         block_size: int,
         eos_token_id: Optional[int] = None,
         lora_request: Optional[LoRARequest] = None,
+        prompt_adapter_request: Optional[PromptAdapterRequest] = None
     ) -> None:
         self.seq_id = seq_id
         self.prompt = prompt
         self.block_size = block_size
         self.eos_token_id = eos_token_id
         self.lora_request = lora_request
+        self.prompt_adapter_request = prompt_adapter_request
+
+        prompt_token_ids = [
+            0
+        ] * self.prompt_adapter_num_virtual_tokens + prompt_token_ids
 
         self.data = SequenceData(prompt_token_ids)
         self.output_logprobs: SampleLogprobs = []
@@ -194,6 +203,14 @@ class Sequence:
     @property
     def lora_int_id(self) -> int:
         return self.lora_request.lora_int_id if self.lora_request else 0
+
+    @property
+    def prompt_adapter_id(self) -> int:
+        return self.prompt_adapter_request.prompt_adapter_id if self.prompt_adapter_request else 0
+
+    @property
+    def prompt_adapter_num_virtual_tokens(self) -> int:
+        return self.prompt_adapter_request.prompt_adapter_num_virtual_tokens if self.prompt_adapter_request else 0
 
     def hash_of_block(self, logical_idx: int) -> int:
         # Compute the number of tokens in the sequence
@@ -342,6 +359,7 @@ class SequenceGroup:
         sampling_params: SamplingParams,
         arrival_time: float,
         lora_request: Optional[LoRARequest] = None,
+        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
         multi_modal_data: Optional[MultiModalData] = None,
     ) -> None:
         self.request_id = request_id
@@ -353,6 +371,7 @@ class SequenceGroup:
                                       first_token_time=None,
                                       time_in_queue=None)
         self.lora_request = lora_request
+        self.prompt_adapter_request = prompt_adapter_request
         self.prompt_logprobs: Optional[PromptLogprobs] = None
         self.state = SequenceGroupState()
         self.multi_modal_data = multi_modal_data
@@ -372,6 +391,14 @@ class SequenceGroup:
     @property
     def lora_int_id(self) -> int:
         return self.lora_request.lora_int_id if self.lora_request else 0
+
+    @property
+    def prompt_adapter_id(self) -> int:
+        return self.prompt_adapter_request.prompt_adapter_id if self.prompt_adapter_request else 0
+
+    @property
+    def prompt_adapter_num_virtual_tokens(self) -> int:
+        return self.prompt_adapter_request.prompt_adapter_num_virtual_tokens if self.prompt_adapter_request else 0
 
     def get_last_latency(self, now: float) -> float:
         """Gets last token latency for Request level timings."""
@@ -484,6 +511,7 @@ class SequenceGroupMetadata:
         sampling_params: SamplingParams,
         block_tables: Dict[int, List[int]],
         lora_request: Optional[LoRARequest] = None,
+        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
         computed_block_nums: Optional[List[int]] = None,
         state: Optional[SequenceGroupState] = None,
         multi_modal_data: Optional[MultiModalData] = None,
@@ -494,6 +522,7 @@ class SequenceGroupMetadata:
         self.sampling_params = sampling_params
         self.block_tables = block_tables
         self.lora_request = lora_request
+        self.prompt_adapter_request = prompt_adapter_request
         self.computed_block_nums = computed_block_nums
         self.multi_modal_data = multi_modal_data
         self.state = SequenceGroupState() if state is None else state
@@ -501,6 +530,15 @@ class SequenceGroupMetadata:
     @property
     def lora_int_id(self) -> int:
         return self.lora_request.lora_int_id if self.lora_request else 0
+    
+    @property
+    def prompt_adapter_id(self) -> int:
+        return self.prompt_adapter_request.prompt_adapter_id if self.prompt_adapter_request else 0
+
+    @property
+    def prompt_adapter_num_virtual_tokens(self) -> int:
+        return self.prompt_adapter_request.prompt_adapter_num_virtual_tokens if self.prompt_adapter_request else 0
+
 
 
 class SequenceOutput:

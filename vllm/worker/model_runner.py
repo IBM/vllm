@@ -13,6 +13,8 @@ from vllm.logger import init_logger
 from vllm.lora.layers import LoRAMapping
 from vllm.lora.request import LoRARequest
 from vllm.lora.worker_manager import LRUCacheWorkerLoRAManager
+from vllm.prompt_adapter.worker_manager import LRUCacheWorkerPromptAdapterManager
+from vllm.prompt_adapter.request import PromptAdapterRequest
 from vllm.model_executor import SamplingMetadata
 from vllm.model_executor.model_loader import get_model
 from vllm.model_executor.parallel_utils import cupy_utils, custom_all_reduce
@@ -120,6 +122,11 @@ class ModelRunner:
                 self.model.embedding_padding_modules)
             self.model = self.lora_manager.create_lora_manager(self.model)
 
+        self.prompt_adapter_manager = LRUCacheWorkerPromptAdapterManager(
+            self.device)
+        self.model = self.prompt_adapter_manager.create_prompt_adapter_manager(
+            self.model)
+
     def set_block_size(self, block_size: int) -> None:
         self.block_size = block_size
 
@@ -135,7 +142,7 @@ class ModelRunner:
         self,
         seq_group_metadata_list: List[SequenceGroupMetadata],
     ) -> Tuple[torch.Tensor, torch.Tensor, AttentionMetadata, List[int],
-               List[int], List[int], List[int], Set[LoRARequest],
+               List[int], List[int], List[int], Set[LoRARequest],Set[PromptAdapterRequest],
                torch.Tensor]:
         assert len(seq_group_metadata_list) > 0
         input_tokens: List[int] = []
@@ -144,6 +151,7 @@ class ModelRunner:
         lora_index_mapping: List[int] = []
         lora_prompt_mapping: List[int] = []
         lora_requests: Set[LoRARequest] = set()
+        prompt_adapter_requests: Set[PromptAdapterRequest] = set()
 
         prompt_lens: List[int] = []
         context_lens: List[int] = []
@@ -185,9 +193,14 @@ class ModelRunner:
                 list(range(computed_len, computed_len + len(prompt_tokens))))
 
             lora_id = seq_group_metadata.lora_int_id
+            prompt_adapter_id = seq_group_metadata.prompt_adapter_id
 
             if lora_id > 0:
                 lora_requests.add(seq_group_metadata.lora_request)
+
+            if prompt_adapter_id > 0:
+                prompt_adapter_requests.add(
+                    seq_group_metadata.prompt_adapter_request)
 
             lora_index_mapping += [lora_id] * (prompt_len - computed_len)
             lora_prompt_mapping.extend(
@@ -312,13 +325,13 @@ class ModelRunner:
         )
         return (input_tokens, input_positions, attn_metadata, prompt_lens,
                 subquery_lens, lora_index_mapping, lora_prompt_mapping,
-                lora_requests, multi_modal_input)
+                lora_requests, prompt_adapter_requests, multi_modal_input)
 
     def _prepare_decode(
         self,
         seq_group_metadata_list: List[SequenceGroupMetadata],
     ) -> Tuple[torch.Tensor, torch.Tensor, AttentionMetadata, List[int],
-               List[int], Set[LoRARequest]]:
+               List[int], Set[LoRARequest], Set[PromptAdapterRequest]]:
         assert len(seq_group_metadata_list) > 0
         input_tokens: List[int] = []
         input_positions: List[int] = []
@@ -328,15 +341,21 @@ class ModelRunner:
         lora_index_mapping: List[int] = []
         lora_prompt_mapping: List[int] = []
         lora_requests: Set[LoRARequest] = set()
+        prompt_adapter_requests: Set[PromptAdapterRequest] = set()
 
         for seq_group_metadata in seq_group_metadata_list:
             assert not seq_group_metadata.is_prompt
 
             seq_ids = list(seq_group_metadata.seq_data.keys())
             lora_id = seq_group_metadata.lora_int_id
+            prompt_adapter_id = seq_group_metadata.prompt_adapter_id
 
             if lora_id > 0:
                 lora_requests.add(seq_group_metadata.lora_request)
+
+            if prompt_adapter_id > 0:
+                prompt_adapter_requests.add(
+                    seq_group_metadata.prompt_adapter_request)
 
             for seq_id in seq_ids:
                 seq_data = seq_group_metadata.seq_data[seq_id]
@@ -442,7 +461,8 @@ class ModelRunner:
             kv_cache_dtype=self.kv_cache_dtype,
         )
         return (input_tokens, input_positions, attn_metadata,
-                lora_index_mapping, lora_prompt_mapping, lora_requests)
+                lora_index_mapping, lora_prompt_mapping, lora_requests,
+                prompt_adapter_requests)
 
     def _prepare_sample(
         self,
@@ -555,12 +575,12 @@ class ModelRunner:
             if is_prompt:
                 (input_tokens, input_positions, attn_metadata, prompt_lens,
                  subquery_lens, lora_index_mapping, lora_prompt_mapping,
-                 lora_requests, multi_modal_input
+                 lora_requests, prompt_adapter_requests, multi_modal_input
                  ) = self._prepare_prompt(seq_group_metadata_list)
             else:
                 (input_tokens, input_positions, attn_metadata,
                  lora_index_mapping, lora_prompt_mapping,
-                 lora_requests) = self._prepare_decode(seq_group_metadata_list)
+                 lora_requests, prompt_adapter_requests) = self._prepare_decode(seq_group_metadata_list)
                 prompt_lens = []
                 subquery_lens = None
                 multi_modal_input = None
@@ -583,6 +603,7 @@ class ModelRunner:
                 "selected_token_indices":
                 sampling_metadata.selected_token_indices,
                 "lora_requests": lora_requests,
+                "prompt_adapter_requests": prompt_adapter_requests,
                 "lora_mapping": lora_mapping,
                 "multi_modal_input": multi_modal_input,
             }
@@ -596,6 +617,7 @@ class ModelRunner:
                 "selected_token_indices")
             lora_mapping = metadata_dict.pop("lora_mapping")
             lora_requests = metadata_dict.pop("lora_requests")
+            prompt_adapter_requests = metadata_dict["prompt_adapter_requests"]
             multi_modal_input = metadata_dict.pop("multi_modal_input")
             attn_metadata = self.attn_backend.make_metadata(**metadata_dict)
             sampling_metadata = SamplingMetadata(
@@ -609,8 +631,8 @@ class ModelRunner:
             )
 
         return (input_tokens, input_positions, attn_metadata,
-                sampling_metadata, lora_requests, lora_mapping,
-                multi_modal_input)
+                sampling_metadata, lora_requests, prompt_adapter_requests, 
+                lora_mapping, multi_modal_input)
 
     @torch.inference_mode()
     def execute_model(
@@ -619,11 +641,13 @@ class ModelRunner:
         kv_caches: List[torch.Tensor],
     ) -> Optional[SamplerOutput]:
         (input_tokens, input_positions, attn_metadata, sampling_metadata,
-         lora_requests, lora_mapping, multi_modal_input
+         lora_requests, prompt_adapter_requests, lora_mapping, multi_modal_input
          ) = self.prepare_input_tensors(seq_group_metadata_list)
 
         if self.lora_config:
             self.set_active_loras(lora_requests, lora_mapping)
+
+        self.set_active_prompt_adapters(prompt_adapter_requests)
 
         # Execute the model.
         if attn_metadata.use_cuda_graph:
@@ -733,15 +757,29 @@ class ModelRunner:
             raise RuntimeError("LoRA is not enabled.")
         self.lora_manager.set_active_loras(lora_requests, lora_mapping)
 
+    def set_active_prompt_adapters(
+            self, prompt_adapter_requests: List[PromptAdapterRequest]) -> None:
+        self.prompt_adapter_manager.set_active_prompt_adapters(prompt_adapter_requests)
+
     def add_lora(self, lora_request: LoRARequest) -> bool:
         if not self.lora_manager:
             raise RuntimeError("LoRA is not enabled.")
         return self.lora_manager.add_lora(lora_request)
+    
+    def add_prompt_adapter(self, prompt_adapter_request: PromptAdapterRequest) -> bool:
+        if not self.lora_manager:
+            raise RuntimeError("PromptAdapter is not enabled.")
+        return self.lora_manager.add_prompt_adapter(prompt_adapter_request)
 
     def remove_lora(self, lora_id: int) -> bool:
         if not self.lora_manager:
             raise RuntimeError("LoRA is not enabled.")
         return self.lora_manager.remove_lora(lora_id)
+
+    def remove_prompt_adapter(self, prompt_adapter_id: int) -> bool:
+        if not self.lora_manager:
+            raise RuntimeError("PromptAdapter is not enabled.")
+        return self.lora_manager.remove_lora(prompt_adapter_id)
 
     def list_loras(self) -> Set[int]:
         if not self.lora_manager:

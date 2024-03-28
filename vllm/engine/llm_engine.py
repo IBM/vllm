@@ -13,6 +13,7 @@ from vllm.engine.ray_utils import initialize_ray_cluster
 from vllm.executor.executor_base import ExecutorBase
 from vllm.logger import init_logger
 from vllm.lora.request import LoRARequest
+from vllm.prompt_adapter.request import PromptAdapterRequest
 from vllm.outputs import RequestOutput
 from vllm.sampling_params import SamplingParams
 from vllm.sequence import (MultiModalData, SamplerOutput, Sequence,
@@ -215,6 +216,7 @@ class LLMEngine:
         prompt_token_ids: Optional[List[int]] = None,
         arrival_time: Optional[float] = None,
         lora_request: Optional[LoRARequest] = None,
+        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
         multi_modal_data: Optional[MultiModalData] = None,
     ) -> None:
         """Add a request to the engine's request pool.
@@ -282,7 +284,7 @@ class LLMEngine:
         eos_token_id = self.tokenizer.get_lora_tokenizer(
             lora_request).eos_token_id
         seq = Sequence(seq_id, prompt, prompt_token_ids, block_size,
-                       eos_token_id, lora_request)
+                       eos_token_id, lora_request, prompt_adapter_request)
 
         # Defensive copy of SamplingParams, which are used by the sampler,
         # this doesn't deep-copy LogitsProcessor objects
@@ -293,7 +295,7 @@ class LLMEngine:
 
         # Create the sequence group.
         seq_group = SequenceGroup(request_id, [seq], sampling_params,
-                                  arrival_time, lora_request, multi_modal_data)
+                                  arrival_time, lora_request, prompt_adapter_request, multi_modal_data)
 
         # Add the sequence group to the scheduler.
         self.scheduler.add_seq_group(seq_group)
