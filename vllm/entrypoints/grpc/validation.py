@@ -103,7 +103,7 @@ def validate_params(params: Parameters, max_max_new_tokens: int):
         TGISValidationError.Temperature.error()
     if sampling.top_k < 0:
         TGISValidationError.TopK.error()
-    if sampling.top_p < 0 or sampling.top_p > 1:
+    if not(0 <= sampling.top_p <= 1):
         TGISValidationError.TopP.error()
     if sampling.typical_p > 1:
         TGISValidationError.TypicalP.error()
