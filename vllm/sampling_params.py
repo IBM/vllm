@@ -2,7 +2,7 @@
 import copy
 from enum import IntEnum
 from functools import cached_property
-from typing import Callable, List, Optional, Union
+from typing import Callable, List, Optional, Tuple, Union
 
 import torch
 
@@ -81,6 +81,8 @@ class SamplingParams:
         max_tokens: Maximum number of tokens to generate per output sequence.
         min_tokens: Minimum number of tokens to generate per output sequence
             before EOS or stop_token_ids can be generated
+        exponential_decay_length_penalty: Starting index and decay factor to penalize
+            long output sequences.
         logprobs: Number of log probabilities to return per output token.
             Note that the implementation follows the OpenAI API: The return
             result includes the log probabilities on the `logprobs` most likely
@@ -116,6 +118,7 @@ class SamplingParams:
         ignore_eos: bool = False,
         max_tokens: Optional[int] = 16,
         min_tokens: int = 0,
+        exponential_decay_length_penalty: Optional[Tuple[int,float]] = None,
         logprobs: Optional[int] = None,
         prompt_logprobs: Optional[int] = None,
         skip_special_tokens: bool = True,
@@ -148,6 +151,7 @@ class SamplingParams:
         self.ignore_eos = ignore_eos
         self.max_tokens = max_tokens
         self.min_tokens = min_tokens
+        self.exponential_decay_length_penalty = exponential_decay_length_penalty
         self.logprobs = logprobs
         self.prompt_logprobs = prompt_logprobs
         self.skip_special_tokens = skip_special_tokens
@@ -200,6 +204,12 @@ class SamplingParams:
         if self.min_tokens < 0:
             raise ValueError(f"min_tokens must be greater than or equal to 0, "
                              f"got {self.min_tokens}.")
+        if self.exponential_decay_length_penalty is not None:
+            p = self.exponential_decay_length_penalty
+            if p[0] < 0:
+                raise ValueError(f"The start index of the exponential decay length penalty must be greater than or equal to 0,"
+                                f"got {p[0]}.")
+
         if self.max_tokens is not None and self.min_tokens > self.max_tokens:
             raise ValueError(
                 f"min_tokens must be less than or equal to "

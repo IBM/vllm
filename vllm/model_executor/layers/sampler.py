@@ -39,7 +39,7 @@ class Sampler(nn.Module):
 
         # Apply min_tokens penalty which sets stop tokens to -inf if min_tokens
         # have not been generated yet
-        logits = _apply_min_tokens_penalty(logits, sampling_metadata)
+        logits = _apply_end_token_penalties(logits, sampling_metadata)
 
         # Prepare sampling tensors with pinned memory to avoid blocking.
         (sampling_tensors, do_penalties, do_top_p_top_k,
@@ -99,7 +99,7 @@ def _get_bin_counts_and_mask(
     return bin_counts, mask
 
 
-def _apply_min_tokens_penalty(
+def _apply_end_token_penalties(
     logits: torch.Tensor,
     sampling_metadata: SamplingMetadata,
 ) -> torch.Tensor:
@@ -107,23 +107,34 @@ def _apply_min_tokens_penalty(
     logits_to_penalize = []
     start_idx = 0
     for seq_ids, sampling_params in sampling_metadata.seq_groups:
-        min_tokens = sampling_params.min_tokens
-        if min_tokens > 0:
-            seqs_to_penalize = []
-            for i, seq_id in enumerate(seq_ids):
-                seq_data = sampling_metadata.seq_data[seq_id]
-                if len(seq_data.output_token_ids) < min_tokens:
+        # use set() to remove any duplicates
+        end_tokens = set(sampling_params.stop_token_ids +
+                            [sampling_params.eos_token_id])
+        
+        length_penalty = sampling_params.exponential_decay_length_penalty
+        min_tokens     = sampling_params.min_tokens
+        
+        seqs_to_penalize = []
+        for i, seq_id in enumerate(seq_ids):
+            seq_data = sampling_metadata.seq_data[seq_id]
+
+            output_length = len(seq_data.output_token_ids)
+            if length_penalty is not None:
+                tokens_past = output_length - length_penalty[0]
+                if tokens_past > 0:
+                    idx = tuple(zip(*itertools.product([i + start_idx], end_tokens)))
+                    logits[idx] *=  pow(length_penalty[1], tokens_past)
+
+            if min_tokens > 0:
+                if output_length < min_tokens:
                     seqs_to_penalize.append(i)
 
-            if seqs_to_penalize:
-                # convert to the index into logits
-                seqs_to_penalize = [start_idx + i for i in seqs_to_penalize]
-                # use set() to remove any duplicates
-                token_ids_to_penalize = set(sampling_params.stop_token_ids +
-                                            [sampling_params.eos_token_id])
-                # itertools.product pairs each seq index with every token id
-                logits_to_penalize.extend(
-                    itertools.product(seqs_to_penalize, token_ids_to_penalize))
+        if seqs_to_penalize:
+            # convert to the index into logits
+            seqs_to_penalize = [start_idx + i for i in seqs_to_penalize]
+            # itertools.product pairs each seq index with every token id
+            logits_to_penalize.extend(
+                itertools.product(seqs_to_penalize, end_tokens))
 
         start_idx += len(seq_ids)
 

@@ -15,16 +15,16 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from prometheus_client import make_asgi_app
 
 import vllm
-from vllm.tgis_utils.args import add_tgis_args, postprocess_tgis_args
-from vllm.entrypoints.grpc.grpc_server import start_grpc_server
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
+from vllm.entrypoints.grpc.grpc_server import start_grpc_server
 from vllm.entrypoints.openai.cli_args import make_arg_parser
 from vllm.entrypoints.openai.protocol import (ChatCompletionRequest,
                                               CompletionRequest, ErrorResponse)
 from vllm.entrypoints.openai.serving_chat import OpenAIServingChat
 from vllm.entrypoints.openai.serving_completion import OpenAIServingCompletion
 from vllm.logger import init_logger
+from vllm.tgis_utils.args import add_tgis_args, postprocess_tgis_args
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
