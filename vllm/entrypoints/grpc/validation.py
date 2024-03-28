@@ -9,7 +9,6 @@ MAX_STOP_SEQS = 6
 MAX_STOP_SEQ_LENGTH = 240
 
 # Whether to reject requests if sampling parameters are provided in greedy mode, or to silently ignore them
-# TODO: should there be a way to toggle this on?
 STRICT_PARAMETER_VALIDATION = False
 
 
