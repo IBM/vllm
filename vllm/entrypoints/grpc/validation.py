@@ -67,7 +67,7 @@ def validate_params(params: Parameters, max_max_new_tokens: int):
         if not (1.0 <= decoding.length_penalty.decay_factor <= 10.0):
             TGISValidationError.LengthPenalty.error()
 
-    if decoding.repetition_penalty < 0 or decoding.repetition_penalty > 2:
+    if not(0 <= decoding.repetition_penalty <= 2):
         # (a value of 0 means no penalty / unset)
         TGISValidationError.RepetitionPenalty.error()
 
