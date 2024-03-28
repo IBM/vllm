@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - release
+      - request-validation-build
     paths-ignore:
       - "**.md"
       - "proto/**"
