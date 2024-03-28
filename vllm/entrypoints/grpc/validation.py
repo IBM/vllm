@@ -34,7 +34,6 @@ class TGISValidationError(str, Enum):
     SampleParametersGreedy = "sampling parameters aren't applicable in greedy decoding mode"
 
     # Additions that are _not_ in TGIS
-    LengthPenaltyUnsupported = "decoding.length_penalty parameter not yet supported"
     TopN = "top_n_tokens ({0}) must be <= {1}"
 
     def error(self, *args, **kwargs):
@@ -63,9 +62,8 @@ def validate_params(params: Parameters, max_max_new_tokens: int):
 
     # Decoding parameter checks
     if decoding.HasField("length_penalty"):
-        # TODO: remove this when we support length penalty
-        TGISValidationError.LengthPenaltyUnsupported.error()
-        if decoding.length_penalty.decay_factor < 1.0 or decoding.length_penalty.decay_factor > 10.0:
+        args = [decoding.length_penalty.decay_factor, decoding.length_penalty.decay_factor]
+        if None in args or args[0] < 1.0 or args[1] > 10.0:
             TGISValidationError.LengthPenalty.error()
 
     if decoding.repetition_penalty < 0 or decoding.repetition_penalty > 2:

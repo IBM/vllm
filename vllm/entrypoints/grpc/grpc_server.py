@@ -324,6 +324,11 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         deadline = time.time(
         ) + time_limit_millis / 1000.0 if time_limit_millis > 0 else None
 
+        length_penalty = (
+                    params.decoding.length_penalty.start_index,
+                    params.decoding.length_penalty.decay_factor,
+        ) if params.decoding.length_penalty is not None else None
+
         try:
             sampling_params = SamplingParams(
                 logprobs=logprobs,
@@ -331,6 +336,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                 if resp_options.input_tokens else None,
                 max_tokens=max_new_tokens,
                 min_tokens=min_new_tokens,
+                exponential_decay_length_penalty=length_penalty,
                 temperature=with_default(sampling.temperature, 1.0)
                 if not greedy else 0.0,
                 top_k=with_default(sampling.top_k, -1),
