@@ -304,5 +304,7 @@ RUN microdnf install -y shadow-utils \
     && microdnf clean all \
     && chmod g+rwx $HOME /usr/src /workspace
 
+COPY LICENSE /licenses/vllm.md
+
 USER 2000
 ENTRYPOINT ["python3", "-m", "vllm.entrypoints.openai.api_server"]
