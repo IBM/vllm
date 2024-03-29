@@ -6,6 +6,7 @@ from vllm.logger import init_logger
 
 logger = init_logger(__name__)
 
+
 def _to_env_var(arg_name: str):
     return arg_name.upper().replace("-", "_")
 

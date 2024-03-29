@@ -28,7 +28,7 @@ from vllm.entrypoints.grpc.pb.generation_pb2 import (BatchedGenerationRequest,
                                                      SingleGenerationRequest,
                                                      StopReason, TokenInfo,
                                                      TokenizeResponse)
-from vllm.entrypoints.grpc.validation import validate_params, validate_input
+from vllm.entrypoints.grpc.validation import validate_input, validate_params
 from vllm.entrypoints.openai.serving_completion import merge_async_iterators
 from vllm.logger import init_logger
 from vllm.sequence import Logprob
@@ -268,7 +268,8 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         try:
             validate_params(params, self.max_max_new_tokens)
         except ValueError as tgis_validation_error:
-            await context.abort(StatusCode.INVALID_ARGUMENT, str(tgis_validation_error))
+            await context.abort(StatusCode.INVALID_ARGUMENT,
+                                str(tgis_validation_error))
 
         resp_options = params.response
         sampling = params.sampling
@@ -341,8 +342,10 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                 skip_special_tokens=self.skip_special_tokens,
             )
         except ValueError as vllm_validation_error:
-            # There may be validation cases caught by vLLM that are not covered by the TGIS api validation
-            await context.abort(StatusCode.INVALID_ARGUMENT, str(vllm_validation_error))
+            # There may be validation cases caught by vLLM that are not covered
+            # by the TGIS api validation
+            await context.abort(StatusCode.INVALID_ARGUMENT,
+                                str(vllm_validation_error))
 
         return sampling_params, deadline
 
@@ -454,7 +457,8 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         try:
             validate_input(sampling_params, token_num, max_model_len)
         except ValueError as tgis_validation_error:
-            await context.abort(StatusCode.INVALID_ARGUMENT, str(tgis_validation_error))
+            await context.abort(StatusCode.INVALID_ARGUMENT,
+                                str(tgis_validation_error))
 
         max_new_tokens: Optional[int] = sampling_params.max_tokens
         max_is_token_limit = False
