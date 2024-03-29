@@ -477,6 +477,14 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
     @log_rpc_handler_errors
     async def Tokenize(self, request: BatchedTokenizeRequest,
                        context: ServicerContext) -> BatchedTokenizeResponse:
+        #TODO implement these
+        if request.return_offsets:
+            await context.abort(StatusCode.INVALID_ARGUMENT,
+                                "return_offsets not yet supported")
+        if request.truncate_input_tokens:
+            await context.abort(StatusCode.INVALID_ARGUMENT,
+                                "truncate_input_tokens not yet supported")
+
         responses: List[TokenizeResponse] = []
 
         #TODO maybe parallelize, also move convert_ids_to_tokens
