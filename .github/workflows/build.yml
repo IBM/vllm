@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - release
+      - ray-test
     paths-ignore:
       - "**.md"
       - "proto/**"
