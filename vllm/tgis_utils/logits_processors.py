@@ -18,7 +18,7 @@ class TypicalLogitsWarperWrapper:
 
 class LengthPenaltyWarper:
 
-    def __init__(self, length_penalty: Tuple[int,float], eos_token_id: int):
+    def __init__(self, length_penalty: Tuple[int, float], eos_token_id: int):
         self.length_penalty = length_penalty
         self.eos_token_id = eos_token_id
 

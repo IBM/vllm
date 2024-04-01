@@ -322,11 +322,8 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                 params.decoding.length_penalty.decay_factor,
             )
             logits_processors.append(
-                LengthPenaltyWarper(
-                    length_penalty=length_penalty,
-                    eos_token_id=self.tokenizer.eos_token_id
-                )
-            )
+                LengthPenaltyWarper(length_penalty=length_penalty,
+                    eos_token_id=self.tokenizer.eos_token_id))
 
         time_limit_millis = stopping.time_limit_millis
         deadline = time.time(
