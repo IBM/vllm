@@ -329,12 +329,10 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                     eos_token_id=self.tokenizer.eos_token_id
                 )
             )
-        
 
         time_limit_millis = stopping.time_limit_millis
         deadline = time.time(
         ) + time_limit_millis / 1000.0 if time_limit_millis > 0 else None
-
 
         try:
             sampling_params = SamplingParams(
