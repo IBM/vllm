@@ -26,5 +26,6 @@ class LengthPenaltyWarper:
                  logits: torch.tensor) -> torch.tensor:
         tokens_past = len(token_ids) - self.length_penalty[0]
         if tokens_past > 0:
-            logits[self.eos_token_id] *=  pow(self.length_penalty[1], tokens_past)
+            logits[self.eos_token_id] *= pow(self.length_penalty[1],
+                                             tokens_past)
         return logits

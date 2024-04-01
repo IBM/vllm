@@ -113,7 +113,8 @@ def test_exponential_decay_length_penalty(seed: int, device: str):
             SequenceGroupMetadata(
                 request_id=f"test_{i}",
                 is_prompt=True,
-                seq_data={0: SequenceData([1, 2, 3], [1,2,3,4])}, # Output length 4 exceeds penalty start index by 2
+                 # Output length 4 exceeds penalty start index by 2
+                seq_data={0: SequenceData([1, 2, 3], [1,2,3,4])},
                 sampling_params=SamplingParams(temperature=0,
                                                logits_processors=[lenpen]),
                 block_tables={0: [1]},
@@ -128,8 +129,11 @@ def test_exponential_decay_length_penalty(seed: int, device: str):
         hidden_states=input_tensor,
         sampling_metadata=sampling_metadata)
 
-    assert torch.allclose(logits_processor_output[:, eos_token_id], fake_logits[:, eos_token_id]*4.0, 1e-4)
-    assert torch.allclose(logits_processor_output[:, :eos_token_id], fake_logits[:, :eos_token_id], 1e-4)
-    assert torch.allclose(logits_processor_output[:, eos_token_id+1:], fake_logits[:, eos_token_id+1:], 1e-4)
+    assert torch.allclose(logits_processor_output[:, eos_token_id],
+                          fake_logits[:, eos_token_id]*4.0, 1e-4)
+    assert torch.allclose(logits_processor_output[:, :eos_token_id],
+                          fake_logits[:, :eos_token_id], 1e-4)
+    assert torch.allclose(logits_processor_output[:, eos_token_id+1:],
+                          fake_logits[:, eos_token_id+1:], 1e-4)
 
     del model_runner

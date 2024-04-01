@@ -32,7 +32,8 @@ from vllm.entrypoints.grpc.validation import validate_input, validate_params
 from vllm.entrypoints.openai.serving_completion import merge_async_iterators
 from vllm.logger import init_logger
 from vllm.sequence import Logprob
-from vllm.tgis_utils.logits_processors import LengthPenaltyWarper, TypicalLogitsWarperWrapper
+from vllm.tgis_utils.logits_processors import (LengthPenaltyWarper,
+                                               TypicalLogitsWarperWrapper)
 from vllm.transformers_utils.tokenizer_group import BaseTokenizerGroup
 
 logger = init_logger(__name__)
