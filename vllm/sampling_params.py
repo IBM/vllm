@@ -2,7 +2,7 @@
 import copy
 from enum import IntEnum
 from functools import cached_property
-from typing import Callable, List, Optional, Union
+from typing import Callable, List, Optional, Tuple, Union
 
 import torch
 
