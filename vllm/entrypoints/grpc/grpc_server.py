@@ -15,12 +15,20 @@ from vllm import (AsyncLLMEngine, CompletionOutput, RequestOutput,
                   SamplingParams)
 from vllm.config import ModelConfig
 from vllm.entrypoints.grpc.pb import generation_pb2_grpc
-from vllm.entrypoints.grpc.pb.generation_pb2 import (
-    BatchedGenerationRequest, BatchedGenerationResponse,
-    BatchedTokenizeRequest, BatchedTokenizeResponse, DecodingMethod,
-    GenerationResponse, ModelInfoRequest, ModelInfoResponse, Parameters,
-    ResponseOptions, SingleGenerationRequest, StopReason, TokenInfo,
-    TokenizeResponse)
+# yapf: disable
+from vllm.entrypoints.grpc.pb.generation_pb2 import (BatchedGenerationRequest,
+                                                     BatchedGenerationResponse,
+                                                     BatchedTokenizeRequest,
+                                                     BatchedTokenizeResponse,
+                                                     DecodingMethod,
+                                                     GenerationResponse,
+                                                     ModelInfoRequest,
+                                                     ModelInfoResponse,
+                                                     Parameters,
+                                                     ResponseOptions,
+                                                     SingleGenerationRequest,
+                                                     StopReason, TokenInfo,
+                                                     TokenizeResponse)
 from vllm.entrypoints.grpc.validation import validate_input, validate_params
 from vllm.entrypoints.openai.serving_completion import merge_async_iterators
 from vllm.logger import init_logger
