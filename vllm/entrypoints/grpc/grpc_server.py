@@ -309,9 +309,6 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
 
         # to match TGIS, only including typical_p processing
         # when using sampling
-
-
-
         logits_processors = []
 
         if not greedy and 0.0 < sampling.typical_p < 1.0:
