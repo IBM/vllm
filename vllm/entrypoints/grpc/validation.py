@@ -72,8 +72,8 @@ def validate_params(params: Parameters, max_max_new_tokens: int):
 
     # Decoding parameter checks
     if decoding.HasField("length_penalty"):
-        args = [decoding.length_penalty.decay_factor, decoding.length_penalty.decay_factor]
-        if None in args or args[0] < 1.0 or args[1] > 10.0:
+        args = [decoding.length_penalty.start_index, decoding.length_penalty.decay_factor]
+        if None in args or not (1.0 <= args[1] <= 10.0):
             TGISValidationError.LengthPenalty.error()
 
     if not (0 <= decoding.repetition_penalty <= 2):
