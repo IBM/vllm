@@ -32,7 +32,7 @@ from vllm.entrypoints.grpc.validation import validate_params, validate_input
 from vllm.entrypoints.openai.serving_completion import merge_async_iterators
 from vllm.logger import init_logger
 from vllm.sequence import Logprob
-from vllm.tgis_utils.logits_processors import TypicalLogitsWarperWrapper
+from vllm.tgis_utils.logits_processors import LengthPenaltyWarper, TypicalLogitsWarperWrapper
 from vllm.transformers_utils.tokenizer_group import BaseTokenizerGroup
 
 logger = init_logger(__name__)
@@ -308,16 +308,29 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
 
         # to match TGIS, only including typical_p processing
         # when using sampling
+
+        logits_processors = []
+
         if not greedy and 0.0 < sampling.typical_p < 1.0:
-            logits_processors = [
+            logits_processors.append(
                 TypicalLogitsWarperWrapper(mass=sampling.typical_p)
-            ]
-        else:
-            logits_processors = None
+            )
+        if params.decoding.length_penalty is not None:
+            length_penalty = (
+                params.decoding.length_penalty.start_index,
+                params.decoding.length_penalty.decay_factor,
+            )
+            logits_processors.append(
+                LengthPenaltyWarper(
+                    length_penalty=length_penalty,
+                    eos_token_id=self.tokenizer.eos_token_id
+                )
+            )
 
         time_limit_millis = stopping.time_limit_millis
         deadline = time.time(
         ) + time_limit_millis / 1000.0 if time_limit_millis > 0 else None
+
 
         try:
             sampling_params = SamplingParams(
