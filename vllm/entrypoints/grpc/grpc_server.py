@@ -33,7 +33,7 @@ from vllm.entrypoints.grpc.validation import validate_input, validate_params
 from vllm.entrypoints.openai.serving_completion import merge_async_iterators
 from vllm.logger import init_logger
 from vllm.sequence import Logprob
-from vllm.tgis_utils.logits_processors import (LengthPenaltyWarper,
+from vllm.tgis_utils.logits_processors import (ExpDecayLengthPenaltyWarper,
                                                TypicalLogitsWarperWrapper)
 from vllm.transformers_utils.tokenizer_group import BaseTokenizerGroup
 
@@ -276,6 +276,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         resp_options = params.response
         sampling = params.sampling
         stopping = params.stopping
+        decoding = params.decoding
         greedy = params.method == DecodingMethod.GREEDY
 
         max_new_tokens: Optional[int] = None
@@ -295,9 +296,6 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
 
         logprobs = with_default(logprobs, None)
 
-        # GAPS:
-        # - exp_decay_length_penalty
-
         # NEW FUNCTION TO ADD (later)
         # - presence penalty, freq penalty
         # - min_p
@@ -316,14 +314,15 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         if not greedy and 0.0 < sampling.typical_p < 1.0:
             logits_processors.append(
                 TypicalLogitsWarperWrapper(mass=sampling.typical_p))
-        if params.decoding.length_penalty is not None:
-            length_penalty = (
-                params.decoding.length_penalty.start_index,
-                params.decoding.length_penalty.decay_factor,
+
+        if decoding.HasField("length_penalty"):
+            length_penalty_tuple = (
+                decoding.length_penalty.start_index,
+                decoding.length_penalty.decay_factor,
             )
             logits_processors.append(
-                LengthPenaltyWarper(length_penalty=length_penalty,
-                                    eos_token_id=self.tokenizer.eos_token_id))
+                ExpDecayLengthPenaltyWarper(length_penalty=length_penalty_tuple,
+                                            eos_token_id=self.tokenizer.eos_token_id))
 
         time_limit_millis = stopping.time_limit_millis
         deadline = time.time(
@@ -342,7 +341,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                 top_p=with_default(sampling.top_p, 1.0),
                 seed=sampling.seed if sampling.HasField("seed") else None,
                 repetition_penalty=with_default(
-                    params.decoding.repetition_penalty, 1.0),
+                    decoding.repetition_penalty, 1.0),
                 logits_processors=logits_processors,
                 stop=with_default(stopping.stop_sequences, None),
                 include_stop_str_in_output=stopping.include_stop_sequence
