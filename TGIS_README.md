@@ -45,19 +45,18 @@ Rebasing vllm:main onto ibm:main is pretty straightforward. Assuming you have vl
 ```shell
 # fetch latest ibm main
 git fetch origin main
-
 # fetch latest vllm main
 git fetch upstream main
-git checkout upstream/main
 
-# point a branch here
-git branch -f upstream-main-sync HEAD
-git checkout upstream-main-sync
-
-# rebase the branch onto ibm main
-git rebase origin/main
-# You may see _many_ warnings about skipping previously applied commits- this is expected
-
+# Check out IBM main and cherry pick all new vllm commits here
+# NB: This works because the vllm main uses squash commits for a linear history.
+# Rebasing vllm main onto ibm main creates some small issues where manual conflict resolution causes commits to differ, and must be skipped or re-applied with every rebase
+git checkout origin/main
+git cherry-pick $(cat vllm_main_commit.txt)..upstream/main
+# Store the new latest vllm main commit
+echo "$(git rev-parse --short upstream/main)" > vllm_main_commit.txt
+git add vllm_main_commit.txt
+git commit -s -m "Update vLLM to $(git rev-parse --short upstream/main)"
 # Push to origin/main
 git push origin HEAD:main
 ```
