@@ -113,7 +113,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                 = await self._validate_prompt_and_tokenize(
                     sampling_params, truncate_input_tokens, req.text, context)
             generators.append(
-                self.engine.generate(None,
+                self.engine.generate(req.text,
                                      sampling_params,
                                      f"{request_id}-{i}",
                                      prompt_token_ids=input_ids))
@@ -166,7 +166,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             context)
 
         result_generator = self.engine.generate(
-            prompt=None,
+            prompt=request.request.text,
             sampling_params=sampling_params,
             request_id=request_id,
             prompt_token_ids=input_ids,
