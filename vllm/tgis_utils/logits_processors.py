@@ -10,25 +10,26 @@ class TypicalLogitsWarperWrapper:
         self.warper = TypicalLogitsWarper(mass=mass)
 
     def __call__(self, token_ids: List[int],
-                 logits: torch.tensor) -> torch.tensor:
+                 logits: torch.Tensor) -> torch.Tensor:
         # transformers warpers assume tensors of shape (batch_size, vocab_size)
         # and the typical warper doesn't use input_ids
-        return self.warper(input_ids=None, scores=logits.reshape((1, -1)))
+        return self.warper(input_ids=None,
+                           scores=logits.reshape(1, -1)).flatten()
 
 
-class LengthPenaltyWarper:
+class ExpDecayLengthPenaltyWarper:
 
     def __init__(self, length_penalty: Tuple[int, float], eos_token_id: int):
-        self.length_penalty = length_penalty
+        self.start, self.penalty = length_penalty
         self.eos_token_id = eos_token_id
 
     def __call__(self, token_ids: List[int],
-                 logits: torch.tensor) -> torch.tensor:
-        tokens_past = len(token_ids) - self.length_penalty[0]
+                 logits: torch.Tensor) -> torch.Tensor:
+        tokens_past = len(token_ids) - self.start
         if tokens_past > 0:
             eos_logit = logits[self.eos_token_id]
             # To support negative logits we compute the penalty of the
             # absolute value and add to the original logit
             logits[self.eos_token_id] = eos_logit + torch.abs(eos_logit) * (
-                pow(self.length_penalty[1], tokens_past) - 1)
+                pow(self.penalty, tokens_past) - 1)
         return logits
