@@ -1,7 +1,8 @@
 from typing import List, Tuple
 
 import torch
-from transformers.generation.logits_process import TypicalLogitsWarper
+from transformers.generation.logits_process import (
+    ExponentialDecayLengthPenalty, TypicalLogitsWarper)
 
 
 class TypicalLogitsWarperWrapper:
@@ -21,11 +22,12 @@ class LengthPenaltyWarper:
     def __init__(self, length_penalty: Tuple[int, float], eos_token_id: int):
         self.length_penalty = length_penalty
         self.eos_token_id = eos_token_id
+        self.warper = ExponentialDecayLengthPenalty(
+            exponential_decay_length_penalty=length_penalty,
+            eos_token_id=eos_token_id,
+            input_ids_seq_length=0)
 
     def __call__(self, token_ids: List[int],
                  logits: torch.tensor) -> torch.tensor:
-        tokens_past = len(token_ids) - self.length_penalty[0]
-        if tokens_past > 0:
-            logits[self.eos_token_id] *= pow(self.length_penalty[1],
-                                             tokens_past)
-        return logits
+        return self.warper(input_ids=torch.Tensor(token_ids),
+                           scores=logits.reshape((1, -1)))
