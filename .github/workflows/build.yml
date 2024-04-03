@@ -109,7 +109,10 @@ jobs:
           cache-to: ${{ env.CACHE_TO }}
           push: ${{ github.event_name != 'pull_request' }}
           file: Dockerfile.ubi
-      
+
+      - name: "List docker images"
+        run: docker images
+
       - name: "Cleanup old cache images"
         uses: actions/delete-package-versions@v5
         if: ${{ github.event_name == 'push' }}
@@ -117,9 +120,6 @@ jobs:
           package-name: ${{ env.CACHE_PACKAGE_NAME }}
           package-type: container
           delete-only-untagged-versions: true
-
-      - name: "List docker images"
-        run: docker images
 
       - name: "Check disk usage"
         shell: bash
