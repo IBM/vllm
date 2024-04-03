@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - release
+      - test-build-updates
     paths-ignore:
       - "**.md"
       - "proto/**"
