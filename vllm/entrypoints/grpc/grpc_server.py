@@ -1,4 +1,5 @@
 import argparse
+import dataclasses
 import inspect
 import time
 import uuid
@@ -6,6 +7,7 @@ from typing import (Any, AsyncIterator, Dict, List, MutableSequence, Optional,
                     Tuple, Union)
 
 import grpc
+from google.protobuf import text_format
 from grpc import StatusCode, aio
 from grpc._cython.cygrpc import AbortError
 from grpc.aio import ServicerContext
@@ -38,6 +40,12 @@ from vllm.tgis_utils.logits_processors import (LengthPenaltyWarper,
 from vllm.transformers_utils.tokenizer_group import BaseTokenizerGroup
 
 logger = init_logger(__name__)
+
+@dataclasses.dataclass
+class Times:
+    start: float
+    inference_start: float = 0
+    end: float = 0
 
 
 def with_default(value: Any, default: Any) -> Any:
@@ -96,9 +104,53 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         self.tokenizer_group = await self.engine.get_tokenizer_group()
         self.tokenizer = await self.engine.get_tokenizer()
 
+    # TODO move and clean up all this junk :D
+    def truncate(self, text: str, len_: int) -> bytes:
+        """Truncates a string and escapes control characters"""
+        if len(text) > len_:
+            return f"{text:.{len_}}...".encode("unicode_escape")
+        return text.encode("unicode_escape")
+
+    @staticmethod
+    async def timed_generator(generator: AsyncIterator[RequestOutput], times: Times) -> AsyncIterator[RequestOutput]:
+        # Inject some timing data into each result generator from the engine
+        times.inference_start = time.time()
+        async for val in generator:
+            yield val
+        times.end = time.time()
+
+    def log_response(self, req: BatchedGenerationRequest, res: GenerationResponse, times: Times, kind_log: str):
+        """Logs responses similar to how the TGIS server does"""
+        validation_time = times.inference_start - times.start
+        inference_time = times.end - times.inference_start
+        time_per_token = self.safe_div(inference_time, res.generated_token_count, default=0)
+        total_time = times.start - times.end
+        output_len = len(res.text)
+        short_output = self.truncate(res.text, 32)
+        short_input = [self.truncate(r.text, 32) for r in req.requests]
+        input_bytes = sum(len(r.text) for r in req.requests)
+
+        paramstr = text_format.MessageToString(req.params, as_one_line=True)
+        span_str = f"generate{{input={short_input} prefix_id={req.prefix_id} input_bytes=[{input_bytes}] params={paramstr} validation_time={validation_time*1e6:.2f}µs inference_time={inference_time*1e3:.2f}ms time_per_token={time_per_token*1e3:.2f}ms total_time={total_time*1e3:.2f}ms input_toks={res.input_token_count}}}"
+        stop_reason_str = StopReason.Name(res.stop_reason)
+
+        if res.stop_reason == StopReason.ERROR:
+            logger.error(f"{span_str}: {kind_log} generated {res.generated_token_count} tokens before {stop_reason_str}, output {output_len} bytes: {short_output}")
+        elif res.stop_reason in {StopReason.CANCELLED, StopReason.TOKEN_LIMIT}:
+            logger.warning(f"{span_str}: {kind_log} generated {res.generated_token_count} tokens before {stop_reason_str}, output {output_len} bytes: {short_output}")
+        else:
+            logger.info(f"{span_str}: {kind_log} generated {res.generated_token_count} tokens before {stop_reason_str}, output {output_len} bytes: {short_output}")
+
+    def safe_div(self, a: float, b: float, *, default: float) -> float:
+        try:
+            return a/b
+        except ZeroDivisionError:
+            return default
+
     @log_rpc_handler_errors
     async def Generate(self, request: BatchedGenerationRequest,
                        context: ServicerContext) -> BatchedGenerationResponse:
+        start_time = time.time()
         request_id = self.request_id(context)
         sampling_params, deadline = await self._validate_and_convert_params(
             request.params, context)
@@ -107,16 +159,21 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         request_count = len(request.requests)
 
         generators = []
+        timing_infos = []
         max_is_token_limit = [False] * request_count
         for i, req in enumerate(request.requests):
             input_ids, max_is_token_limit[i]\
                 = await self._validate_prompt_and_tokenize(
                     sampling_params, truncate_input_tokens, req.text, context)
+            timing_info = Times(start=start_time)
+            timing_infos.append(timing_info)
             generators.append(
-                self.engine.generate(req.text,
-                                     sampling_params,
-                                     f"{request_id}-{i}",
-                                     prompt_token_ids=input_ids))
+                self.timed_generator(
+                    self.engine.generate(req.text,
+                                         sampling_params,
+                                         f"{request_id}-{i}",
+                                         prompt_token_ids=input_ids),
+                    timing_info))
 
         # TODO handle cancellation
         result_generator: AsyncIterator[Tuple[
@@ -148,6 +205,11 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             responses[i] = self._convert_input_details(res, resp_options,
                                                        sampling_params,
                                                        response)
+            if len(request.requests) == 1:
+                kind_log = "Request"
+            else:
+                kind_log = f"Sub-request {i} from batch of {len(request.requests)}"
+            self.log_response(req=request, res=responses[i], times=timing_infos[i], kind_log=kind_log)
 
         return BatchedGenerationResponse(responses=responses)
 
@@ -179,6 +241,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         last_token_count = 0
         time_limit_reached = False
         #TODO handle cancellation
+        #TODO: Time and log
         async for result in result_generator:
             if first:
                 # Text prompt is not returned if only token_ids are passed
