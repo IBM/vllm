@@ -7,8 +7,13 @@ requires = [
     "setuptools >= 49.4.0",
     "torch == 2.2.1",
     "wheel",
+    "typer == 0.9.*",
+    "loguru == 0.7.*"
 ]
 build-backend = "setuptools.build_meta"
+
+[project.scripts]
+vllm = 'vllm.cli:app'
 
 [tool.ruff]
 # Allow lines to be as long as 80.
