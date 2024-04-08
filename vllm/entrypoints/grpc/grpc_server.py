@@ -43,8 +43,12 @@ logger = init_logger(__name__)
 
 @dataclasses.dataclass
 class Times:
-    start: float
-    inference_start: float = 0
+    """Container tracking times (in seconds) when requests start and finish """
+    # When control enters Generate or GenerateStream
+    request_start: float
+    # When the request is sent to the vLLM engine
+    engine_start: float = 0
+    # When the stream from the vLLM engine closes
     end: float = 0
 
 
@@ -113,32 +117,35 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
     @staticmethod
     async def timed_generator(generator: AsyncIterator[RequestOutput], times: Times) -> AsyncIterator[RequestOutput]:
         # Inject some timing data into each result generator from the engine
-        times.inference_start = time.time()
+        times.engine_start = time.time()
         async for val in generator:
             yield val
         times.end = time.time()
 
     def log_response(self, req: BatchedGenerationRequest, res: GenerationResponse, times: Times, kind_log: str):
         """Logs responses similar to how the TGIS server does"""
-        validation_time = times.inference_start - times.start
-        inference_time = times.end - times.inference_start
-        time_per_token = self.safe_div(inference_time, res.generated_token_count, default=0)
-        total_time = times.start - times.end
+        # This contains both request validation and tokenization
+        tokenization_time = times.engine_start - times.request_start
+        llm_engine_time = times.end - times.engine_start
+        time_per_token = self.safe_div(llm_engine_time, res.generated_token_count, default=0)
+        total_time = times.request_start - times.end
         output_len = len(res.text)
         short_output = self.truncate(res.text, 32)
         short_input = [self.truncate(r.text, 32) for r in req.requests]
         input_bytes = sum(len(r.text) for r in req.requests)
 
         paramstr = text_format.MessageToString(req.params, as_one_line=True)
-        span_str = f"generate{{input={short_input} prefix_id={req.prefix_id} input_bytes=[{input_bytes}] params={paramstr} validation_time={validation_time*1e6:.2f}µs inference_time={inference_time*1e3:.2f}ms time_per_token={time_per_token*1e3:.2f}ms total_time={total_time*1e3:.2f}ms input_toks={res.input_token_count}}}"
+        span_str = f"generate{{input={short_input} prefix_id={req.prefix_id} input_bytes=[{input_bytes}] params={paramstr} tokenization_time={tokenization_time*1e3:.2f}ms queue_and_inference_time={llm_engine_time*1e3:.2f}ms time_per_token={time_per_token*1e3:.2f}ms total_time={total_time*1e3:.2f}ms input_toks={res.input_token_count}}}"
         stop_reason_str = StopReason.Name(res.stop_reason)
 
         if res.stop_reason == StopReason.ERROR:
-            logger.error(f"{span_str}: {kind_log} generated {res.generated_token_count} tokens before {stop_reason_str}, output {output_len} bytes: {short_output}")
+            log_method = logger.error
         elif res.stop_reason in {StopReason.CANCELLED, StopReason.TOKEN_LIMIT}:
-            logger.warning(f"{span_str}: {kind_log} generated {res.generated_token_count} tokens before {stop_reason_str}, output {output_len} bytes: {short_output}")
+            log_method = logger.warning
         else:
-            logger.info(f"{span_str}: {kind_log} generated {res.generated_token_count} tokens before {stop_reason_str}, output {output_len} bytes: {short_output}")
+            log_method = logger.info
+
+        log_method(f"{span_str}: {kind_log} generated {res.generated_token_count} tokens before {stop_reason_str}, output {output_len} bytes: {short_output}")
 
     def safe_div(self, a: float, b: float, *, default: float) -> float:
         try:
@@ -164,13 +171,15 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             input_ids, max_is_token_limit[i]\
                 = await self._validate_prompt_and_tokenize(
                     sampling_params, truncate_input_tokens, req.text, context)
-            timing_info = Times(start=start_time)
+            timing_info = Times(request_start=start_time)
             timing_infos.append(timing_info)
             generators.append(
                 self.timed_generator(
-                    self.engine.generate(req.text,
-                                         sampling_params,
-                                         f"{request_id}-{i}",
+                    # prompt is supplied for observability, the text is not
+                    # re-tokenized when `prompt_token_ids` is supplied
+                    self.engine.generate(prompt=req.text,
+                                         sampling_params=sampling_params,
+                                         request_id=f"{request_id}-{i}",
                                          prompt_token_ids=input_ids),
                     timing_info))
 
@@ -227,6 +236,8 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             context)
 
         result_generator = self.engine.generate(
+            # prompt is supplied for observability, the text is not
+            # re-tokenized when `prompt_token_ids` is supplied
             prompt=request.request.text,
             sampling_params=sampling_params,
             request_id=request_id,
