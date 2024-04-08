@@ -133,10 +133,10 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         output_len = len(res.text)
         short_output = self.truncate(res.text, 32)
         short_input = [self.truncate(r.text, 32) for r in req.requests]
-        input_bytes = sum(len(r.text) for r in req.requests)
+        input_chars = sum(len(r.text) for r in req.requests)
 
         paramstr = text_format.MessageToString(req.params, as_one_line=True)
-        span_str = f"generate{{input={short_input} prefix_id={req.prefix_id} input_bytes=[{input_bytes}] params={paramstr} tokenization_time={tokenization_time*1e3:.2f}ms queue_and_inference_time={llm_engine_time*1e3:.2f}ms time_per_token={time_per_token*1e3:.2f}ms total_time={total_time*1e3:.2f}ms input_toks={res.input_token_count}}}"
+        span_str = f"generate{{input={short_input} prefix_id={req.prefix_id} input_chars=[{input_chars}] params={paramstr} tokenization_time={tokenization_time*1e3:.2f}ms queue_and_inference_time={llm_engine_time*1e3:.2f}ms time_per_token={time_per_token*1e3:.2f}ms total_time={total_time*1e3:.2f}ms input_toks={res.input_token_count}}}"
         stop_reason_str = StopReason.Name(res.stop_reason)
 
         if res.stop_reason == StopReason.ERROR:
