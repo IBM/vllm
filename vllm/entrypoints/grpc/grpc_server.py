@@ -109,50 +109,6 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         self.tokenizer_group = await self.engine.get_tokenizer_group()
         self.tokenizer = await self.engine.get_tokenizer()
 
-    # TODO move and clean up all this junk :D
-    def truncate(self, text: str, len_: int) -> bytes:
-        """Truncates a string and escapes control characters"""
-        text = f"{text:.{len_}}..." if len(text) > len_ else text
-        return text.encode("unicode_escape")
-
-    @staticmethod
-    async def timed_generator(generator: AsyncIterator[RequestOutput], times: Times) -> AsyncIterator[RequestOutput]:
-        # Inject some timing data into each result generator from the engine
-        times.engine_start = time.time()
-        async for val in generator:
-            yield val
-        times.end = time.time()
-
-    def log_response(self, req: BatchedGenerationRequest, res: GenerationResponse, times: Times, kind_log: str):
-        """Logs responses similar to how the TGIS server does"""
-        # This contains both request validation and tokenization
-        tokenization_time = times.engine_start - times.request_start
-        llm_engine_time = times.end - times.engine_start
-        time_per_token = self.safe_div(llm_engine_time, res.generated_token_count, default=0)
-        total_time = times.request_start - times.end
-        output_len = len(res.text)
-        short_output = self.truncate(res.text, 32)
-        short_input = [self.truncate(r.text, 32) for r in req.requests]
-        input_chars = sum(len(r.text) for r in req.requests)
-
-        paramstr = text_format.MessageToString(req.params, as_one_line=True)
-        span_str = f"generate{{input={short_input} prefix_id={req.prefix_id} input_chars=[{input_chars}] params={paramstr} tokenization_time={tokenization_time*1e3:.2f}ms queue_and_inference_time={llm_engine_time*1e3:.2f}ms time_per_token={time_per_token*1e3:.2f}ms total_time={total_time*1e3:.2f}ms input_toks={res.input_token_count}}}"
-        stop_reason_str = StopReason.Name(res.stop_reason)
-
-        if res.stop_reason == StopReason.ERROR:
-            level = logging.ERROR
-        elif res.stop_reason in {StopReason.CANCELLED, StopReason.TOKEN_LIMIT}:
-            level = logging.WARN
-        else:
-            level = logging.INFO
-        logger.log(level, f"{span_str}: {kind_log} generated {res.generated_token_count} tokens before {stop_reason_str}, output {output_len} bytes: {short_output}")
-
-    def safe_div(self, a: float, b: float, *, default: float) -> float:
-        try:
-            return a/b
-        except ZeroDivisionError:
-            return default
-
     @log_rpc_handler_errors
     async def Generate(self, request: BatchedGenerationRequest,
                        context: ServicerContext) -> BatchedGenerationResponse:
@@ -217,7 +173,10 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                 kind_log = "Request"
             else:
                 kind_log = f"Sub-request {i} from batch of {request_count}"
-            self.log_response(req=request, res=response, times=timing_infos[i], kind_log=kind_log)
+            self.log_response(req=request,
+                              res=response,
+                              times=timing_infos[i],
+                              kind_log=kind_log)
             responses[i] = response
 
         return BatchedGenerationResponse(responses=responses)
@@ -556,6 +515,71 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             max_is_token_limit = True
 
         return input_ids, max_is_token_limit
+
+    @staticmethod
+    def truncate(text: str, len_: int) -> bytes:
+        """Truncates a string and escapes control characters, for logging"""
+        text = f"{text:.{len_}}..." if len(text) > len_ else text
+        return text.encode("unicode_escape")
+
+    @staticmethod
+    async def timed_generator(generator: AsyncIterator[RequestOutput],
+                              times: Times) -> AsyncIterator[RequestOutput]:
+        """Injects some timing data around each result generator from the
+        LLMEngine"""
+        times.engine_start = time.time()
+        async for val in generator:
+            yield val
+        times.end = time.time()
+
+    def log_response(self,
+                     req: BatchedGenerationRequest,
+                     res: GenerationResponse,
+                     times: Times,
+                     kind_log: str):
+        """Logs responses similar to how the TGIS server does"""
+        # This contains both request validation and tokenization
+        tokenization_time = times.engine_start - times.request_start
+        llm_engine_time = times.end - times.engine_start
+        time_per_token = self.safe_div(llm_engine_time,
+                                       res.generated_token_count, default=0)
+        total_time = times.request_start - times.end
+        output_len = len(res.text)
+        short_output = self.truncate(res.text, 32)
+        short_input = [self.truncate(r.text, 32) for r in req.requests]
+        input_chars = sum(len(r.text) for r in req.requests)
+
+        paramstr = text_format.MessageToString(req.params, as_one_line=True)
+        span_str = (f"generate{{input={short_input} prefix_id={req.prefix_id} "
+                    f"input_chars=[{input_chars}] params={paramstr} "
+                    f"tokenization_time={tokenization_time * 1e3:.2f}ms "
+                    f"queue_and_inference_time={llm_engine_time * 1e3:.2f}ms "
+                    f"time_per_token={time_per_token * 1e3:.2f}ms "
+                    f"total_time={total_time * 1e3:.2f}ms "
+                    f"input_toks={res.input_token_count}}}")
+        stop_reason_str = StopReason.Name(res.stop_reason)
+
+        if res.stop_reason == StopReason.ERROR:
+            level = logging.ERROR
+        elif res.stop_reason in {StopReason.CANCELLED, StopReason.TOKEN_LIMIT}:
+            level = logging.WARN
+        else:
+            level = logging.INFO
+        logger.log(level,
+                   f"{span_str}: {kind_log} generated "
+                   f"{res.generated_token_count} tokens before "
+                   f"{stop_reason_str}, output {output_len} chars: "
+                   f"{short_output}")
+
+    @staticmethod
+    def safe_div(a: float, b: float, *, default: float) -> float:
+        """Simple safe division with a default answer for divide-by-zero.
+        Used for logging where we don't mind incorrect answers.
+        """
+        try:
+            return a / b
+        except ZeroDivisionError:
+            return default
 
     @log_rpc_handler_errors
     async def Tokenize(self, request: BatchedTokenizeRequest,
