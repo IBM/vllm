@@ -210,14 +210,15 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             response = self._convert_output(res.outputs[0], resp_options,
                                             max_is_token_limit[i],
                                             time_limit_reached)
-            responses[i] = self._convert_input_details(res, resp_options,
+            response = self._convert_input_details(res, resp_options,
                                                        sampling_params,
                                                        response)
             if request_count == 1:
                 kind_log = "Request"
             else:
                 kind_log = f"Sub-request {i} from batch of {request_count}"
-            self.log_response(req=request, res=responses[i], times=timing_infos[i], kind_log=kind_log)
+            self.log_response(req=request, res=response, times=timing_infos[i], kind_log=kind_log)
+            responses[i] = response
 
         return BatchedGenerationResponse(responses=responses)
 
