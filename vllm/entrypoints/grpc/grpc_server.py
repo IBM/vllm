@@ -1,6 +1,7 @@
 import argparse
 import dataclasses
 import inspect
+import logging
 import time
 import uuid
 from typing import (Any, AsyncIterator, Dict, List, MutableSequence, Optional,
@@ -139,13 +140,12 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         stop_reason_str = StopReason.Name(res.stop_reason)
 
         if res.stop_reason == StopReason.ERROR:
-            log_method = logger.error
+            level = logging.ERROR
         elif res.stop_reason in {StopReason.CANCELLED, StopReason.TOKEN_LIMIT}:
-            log_method = logger.warning
+            level = logging.WARN
         else:
-            log_method = logger.info
-
-        log_method(f"{span_str}: {kind_log} generated {res.generated_token_count} tokens before {stop_reason_str}, output {output_len} bytes: {short_output}")
+            level = logging.INFO
+        logger.log(level, f"{span_str}: {kind_log} generated {res.generated_token_count} tokens before {stop_reason_str}, output {output_len} bytes: {short_output}")
 
     def safe_div(self, a: float, b: float, *, default: float) -> float:
         try:
