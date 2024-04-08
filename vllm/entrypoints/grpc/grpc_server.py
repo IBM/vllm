@@ -176,7 +176,8 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             self.log_response(req=request,
                               res=response,
                               times=timing_infos[i],
-                              kind_log=kind_log)
+                              kind_log=kind_log,
+                              method_str="generate")
             responses[i] = response
 
         return BatchedGenerationResponse(responses=responses)
@@ -185,6 +186,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
     async def GenerateStream(
             self, request: SingleGenerationRequest,
             context: ServicerContext) -> AsyncIterator[GenerationResponse]:
+        timing_info = Times(request_start=time.time())
         request_id = self.request_id(context)
         sampling_params, deadline = await self._validate_and_convert_params(
             request.params, context)
@@ -195,21 +197,27 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             sampling_params, truncate_input_tokens, request.request.text,
             context)
 
-        result_generator = self.engine.generate(
-            # prompt is supplied for observability, the text is not
-            # re-tokenized when `prompt_token_ids` is supplied
-            prompt=request.request.text,
-            sampling_params=sampling_params,
-            request_id=request_id,
-            prompt_token_ids=input_ids,
+        result_generator = self.timed_generator(
+            self.engine.generate(
+                # prompt is supplied for observability, the text is not
+                # re-tokenized when `prompt_token_ids` is supplied
+                prompt=request.request.text,
+                sampling_params=sampling_params,
+                request_id=request_id,
+                prompt_token_ids=input_ids,
+            ),
+            timing_info
         )
 
         resp_options = request.params.response
 
         first = True
+        first_response = None
         last_output_length = 0
         last_token_count = 0
         time_limit_reached = False
+        full_output = ""
+        full_output_token_count = 0
         #TODO handle cancellation
         #TODO: Time and log
         async for result in result_generator:
@@ -237,6 +245,21 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
 
             last_output_length = len(output.text)
             last_token_count = len(output.token_ids)
+            # Accumulate full output for logging
+            full_output += output.text
+            full_output_token_count += last_token_count
+
+        # Edit up the first_response for logging purposes only
+        if first_response is None:
+            # We didn't output anything!
+            return
+        first_response.text = full_output
+        first_response.generated_token_count = full_output_token_count
+        self.log_response(req=request,
+                          res=first_response,
+                          times=timing_info,
+                          kind_log="Streaming response",
+                          method_str="generate_stream")
 
     def _convert_input_details(
             self, result: RequestOutput, resp_options: ResponseOptions,
@@ -533,10 +556,11 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         times.end = time.time()
 
     def log_response(self,
-                     req: BatchedGenerationRequest,
+                     req: BatchedGenerationRequest | SingleGenerationRequest,
                      res: GenerationResponse,
                      times: Times,
-                     kind_log: str):
+                     kind_log: str,
+                     method_str: str):
         """Logs responses similar to how the TGIS server does"""
         # This contains both request validation and tokenization
         tokenization_time = times.engine_start - times.request_start
@@ -550,7 +574,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         input_chars = sum(len(r.text) for r in req.requests)
 
         paramstr = text_format.MessageToString(req.params, as_one_line=True)
-        span_str = (f"generate{{input={short_input} prefix_id={req.prefix_id} "
+        span_str = (f"{method_str}{{input={short_input} prefix_id={req.prefix_id} "
                     f"input_chars=[{input_chars}] params={paramstr} "
                     f"tokenization_time={tokenization_time * 1e3:.2f}ms "
                     f"queue_and_inference_time={llm_engine_time * 1e3:.2f}ms "
