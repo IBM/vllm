@@ -107,8 +107,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
     # TODO move and clean up all this junk :D
     def truncate(self, text: str, len_: int) -> bytes:
         """Truncates a string and escapes control characters"""
-        if len(text) > len_:
-            return f"{text:.{len_}}...".encode("unicode_escape")
+        text = f"{text:.{len_}}..." if len(text) > len_ else text
         return text.encode("unicode_escape")
 
     @staticmethod
