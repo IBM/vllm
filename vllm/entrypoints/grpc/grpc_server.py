@@ -546,7 +546,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
     @staticmethod
     def _log_streaming_response(request: SingleGenerationRequest,
                                 response: GenerationResponse, times: Times):
-        logs.log_response(inputs=[request.text], response=response,
+        logs.log_response(inputs=[request.request.text], response=response,
                           params=request.params, prefix_id=request.prefix_id,
                           times=times, kind_log="Streaming response",
                           method_str="generate_stream", logger=logger)
