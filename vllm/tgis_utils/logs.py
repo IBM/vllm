@@ -12,7 +12,7 @@ def log_response(inputs: List[str], params: Parameters, prefix_id: str,
                  response: GenerationResponse, times, kind_log: str,
                  method_str: str, logger: logging.Logger):
     """Logs responses similar to how the TGIS server does"""
-    # This contains both request validation and tokenization
+    # This time contains both request validation and tokenization
     tokenization_time = times.engine_start - times.request_start
     llm_engine_time = times.end - times.engine_start
     time_per_token = _safe_div(llm_engine_time, response.generated_token_count)
@@ -48,14 +48,13 @@ def log_response(inputs: List[str], params: Parameters, prefix_id: str,
 
 
 def _truncate(text: str, len_: int) -> bytes:
-    """Truncates a string and escapes control characters, for logging"""
+    """Truncates a string and escapes control characters"""
     text = f"{text:.{len_}}..." if len(text) > len_ else text
     return text.encode("unicode_escape")
 
 
 def _safe_div(a: float, b: float, *, default: float = 0.0) -> float:
     """Simple safe division with a default answer for divide-by-zero.
-    Used for logging where we don't mind incorrect answers.
     """
     try:
         return a / b
