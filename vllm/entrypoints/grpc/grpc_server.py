@@ -160,8 +160,6 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                 break
 
         for i, res in enumerate(responses):
-            # Text prompt is not returned if only token_ids are passed
-            res.prompt = request.requests[i].text
             response = self._convert_output(res.outputs[0], resp_options,
                                             max_is_token_limit[i],
                                             time_limit_reached)
@@ -215,11 +213,8 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         time_limit_reached = False
         full_output = ""
         #TODO handle cancellation
-        #TODO: Time and log
         async for result in result_generator:
             if first:
-                # Text prompt is not returned if only token_ids are passed
-                result.prompt = request.request.text
                 first_response = self._convert_input_details(
                     result, resp_options, sampling_params,
                     GenerationResponse())
