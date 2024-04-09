@@ -4,28 +4,21 @@ from typing import List
 
 from google.protobuf import text_format
 
-from vllm.entrypoints.grpc.pb.generation_pb2 import StopReason, Parameters
+from vllm.entrypoints.grpc.pb.generation_pb2 import (GenerationResponse,
+                                                     Parameters, StopReason)
 
 
-def log_response(inputs: List[str],
-                 output: str,
-                 params: Parameters,
-                 prefix_id: str,
-                 input_token_count: int,
-                 generated_token_count: int,
-                 stop_reason: StopReason,
-                 times: 'Times',
-                 kind_log: str,
-                 method_str: str,
-                 logger: logging.Logger):
+def log_response(inputs: List[str], params: Parameters, prefix_id: str,
+                 response: GenerationResponse, times, kind_log: str,
+                 method_str: str, logger: logging.Logger):
     """Logs responses similar to how the TGIS server does"""
     # This contains both request validation and tokenization
     tokenization_time = times.engine_start - times.request_start
     llm_engine_time = times.end - times.engine_start
-    time_per_token = _safe_div(llm_engine_time, generated_token_count)
+    time_per_token = _safe_div(llm_engine_time, response.generated_token_count)
     total_time = times.request_start - times.end
-    output_len = len(output)
-    short_output = _truncate(output, 32)
+    output_len = len(response.text)
+    short_output = _truncate(response.text, 32)
     short_input = [_truncate(input_, 32) for input_ in inputs]
     input_chars = sum(len(input_) for input_ in inputs)
 
@@ -36,20 +29,22 @@ def log_response(inputs: List[str],
                 f"queue_and_inference_time={llm_engine_time * 1e3:.2f}ms "
                 f"time_per_token={time_per_token * 1e3:.2f}ms "
                 f"total_time={total_time * 1e3:.2f}ms "
-                f"input_toks={input_token_count}}}")
-    stop_reason_str = StopReason.Name(stop_reason)
+                f"input_toks={response.input_token_count}}}")
+    stop_reason_str = StopReason.Name(response.stop_reason)
 
-    if stop_reason == StopReason.ERROR:
+    if response.stop_reason == StopReason.ERROR:
         level = logging.ERROR
-    elif stop_reason in {StopReason.CANCELLED, StopReason.TOKEN_LIMIT}:
+    elif response.stop_reason in {
+            StopReason.CANCELLED, StopReason.TOKEN_LIMIT
+    }:
         level = logging.WARN
     else:
         level = logging.INFO
-    logger.log(level,
-               f"{span_str}: {kind_log} generated "
-               f"{generated_token_count} tokens before "
-               f"{stop_reason_str}, output {output_len} chars: "
-               f"{short_output}")
+    logger.log(
+        level, f"{span_str}: {kind_log} generated "
+        f"{response.generated_token_count} tokens before "
+        f"{stop_reason_str}, output {output_len} chars: "
+        f"{short_output}")
 
 
 def _truncate(text: str, len_: int) -> bytes:

@@ -35,7 +35,7 @@ from vllm.entrypoints.openai.serving_completion import merge_async_iterators
 from vllm.logger import init_logger
 from vllm.sequence import Logprob
 from vllm.tgis_utils import logs
-from vllm.tgis_utils.logits_processors import (ExpDecayLengthPenaltyWarper,
+from vllm.tgis_utils.logits_processors import (LengthPenaltyWarper,
                                                TypicalLogitsWarperWrapper)
 from vllm.transformers_utils.tokenizer_group import BaseTokenizerGroup
 
@@ -173,7 +173,8 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             else:
                 kind_log = f"Sub-request {i} from batch of {request_count}"
 
-            self._log_unary_response(request=request, response=response, times=timing_infos[i], kind_log=kind_log)
+            self._log_unary_response(request=request, response=response,
+                                     times=timing_infos[i], kind_log=kind_log)
             responses[i] = response
 
         return BatchedGenerationResponse(responses=responses)
@@ -251,13 +252,8 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             return
         first_response.text = full_output
         first_response.generated_token_count = full_output_token_count
-        self._log_streaming_response(request=request, response=first_response, times=timing_info, kind_log="Streaming response")
-
-        self.log_response(req=request,
-                          res=first_response,
-                          times=timing_info,
-                          kind_log="Streaming response",
-                          method_str="generate_stream")
+        self._log_streaming_response(request=request, response=first_response,
+                                     times=timing_info)
 
     def _convert_input_details(
             self, result: RequestOutput, resp_options: ResponseOptions,
@@ -538,12 +534,22 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         return input_ids, max_is_token_limit
 
     @staticmethod
-    def _log_unary_response(request: BatchedGenerationRequest, response: GenerationResponse, times: Times, kind_log: str):
-        logs.log_response(inputs=[r.text for r in request.requests], output=response.text, params=request.params, prefix_id=request.prefix_id, input_token_count=response.input_token_count, generated_token_count=response.generated_token_count, stop_reason=response.stop_reason, times=times, kind_log=kind_log, method_str="generate", logger=logger)
+    def _log_unary_response(request: BatchedGenerationRequest,
+                            response: GenerationResponse, times: Times,
+                            kind_log: str):
+        logs.log_response(inputs=[r.text for r in request.requests],
+                          response=response, params=request.params,
+                          prefix_id=request.prefix_id, times=times,
+                          kind_log=kind_log, method_str="generate",
+                          logger=logger)
 
     @staticmethod
-    def _log_streaming_response(request: SingleGenerationRequest, response: GenerationResponse, times: Times):
-        logs.log_response(inputs=[request.text], output=response.text, params=request.params, prefix_id=request.prefix_id, input_token_count=response.input_token_count, generated_token_count=response.generated_token_count, stop_reason=response.stop_reason, times=times, kind_log="Streaming response", method_str="generate", logger=logger)
+    def _log_streaming_response(request: SingleGenerationRequest,
+                                response: GenerationResponse, times: Times):
+        logs.log_response(inputs=[request.text], response=response,
+                          params=request.params, prefix_id=request.prefix_id,
+                          times=times, kind_log="Streaming response",
+                          method_str="generate_stream", logger=logger)
 
 
     @staticmethod
