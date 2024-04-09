@@ -214,7 +214,6 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         last_token_count = 0
         time_limit_reached = False
         full_output = ""
-        full_output_token_count = 0
         #TODO handle cancellation
         #TODO: Time and log
         async for result in result_generator:
@@ -244,14 +243,13 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             last_token_count = len(output.token_ids)
             # Accumulate full output for logging
             full_output += output.text
-            full_output_token_count += last_token_count
 
         # Edit up the first_response for logging purposes only
         if first_response is None:
             # We didn't output anything!
             return
         first_response.text = full_output
-        first_response.generated_token_count = full_output_token_count
+        first_response.generated_token_count = last_token_count
         self._log_streaming_response(request=request, response=first_response,
                                      times=timing_info)
 
