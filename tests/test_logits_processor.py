@@ -8,7 +8,7 @@ import torch
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.model_executor.utils import set_random_seed
 from vllm.sequence import SamplingParams, SequenceData, SequenceGroupMetadata
-from vllm.tgis_utils.logits_processors import LengthPenaltyWarper
+from vllm.tgis_utils.logits_processors import ExpDecayLengthPenaltyWarper
 from vllm.worker.model_runner import ModelRunner
 
 
@@ -106,7 +106,7 @@ def test_exponential_decay_length_penalty(seed: int, device: str):
     logits_processor.scale = 1.0
 
     eos_token_id = 100
-    lenpen = LengthPenaltyWarper([2, 2.0], eos_token_id)
+    lenpen = ExpDecayLengthPenaltyWarper((2, 2.0), eos_token_id)
 
     seq_group_metadata_list = []
     prompt_lens = []

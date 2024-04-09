@@ -123,6 +123,11 @@ RUN microdnf install -y \
 
 ENV LIBRARY_PATH="$CUDA_HOME/lib64/stubs"
 
+# Workaround for https://github.com/openai/triton/issues/2507 and
+# https://github.com/pytorch/pytorch/issues/107960 -- hopefully
+# this won't be needed for future versions of this docker image
+# or future versions of triton.
+RUN ldconfig /usr/local/cuda-12.2/compat/
 
 ## Development #################################################################
 FROM cuda-devel AS dev
@@ -181,8 +186,8 @@ RUN microdnf install -y \
     && microdnf clean all
 
 ARG PYTHON_VERSION
-# 0.3.3 is built for CUDA 12.1 and PyTorch 2.1.2
-ARG VLLM_WHEEL_VERSION=0.3.3
+# 0.4.0.post1 is built for CUDA 12.1 and PyTorch 2.1.2
+ARG VLLM_WHEEL_VERSION=0.4.0.post1
 
 RUN curl -Lo vllm.whl https://github.com/vllm-project/vllm/releases/download/v${VLLM_WHEEL_VERSION}/vllm-${VLLM_WHEEL_VERSION}-cp${PYTHON_VERSION//.}-cp${PYTHON_VERSION//.}-manylinux1_x86_64.whl \
     && unzip vllm.whl \
@@ -263,7 +268,7 @@ RUN umask 002 \
 ## Release #####################################################################
 # Note from the non-UBI Dockerfile:
 # We used base cuda image because pytorch installs its own cuda libraries.
-# However cupy depends on cuda libraries so we had to switch to the runtime image
+# However pynccl depends on cuda libraries so we had to switch to the runtime image
 # In the future it would be nice to get a container with pytorch and cuda without duplicating cuda
 FROM cuda-runtime AS vllm-openai
 
@@ -280,7 +285,9 @@ RUN --mount=type=cache,target=/root/.cache/pip \
         # additional dependencies for the TGIS gRPC server
         grpcio-tools==1.62.1 \
         # additional dependencies for openai api_server
-        accelerate==0.28.0
+        accelerate==0.28.0 \
+        # hf_transfer for faster HF hub downloads
+        hf_transfer==0.1.6
 
 # Install flash attention (from pre-built wheel)
 RUN --mount=type=bind,from=flash-attn-builder,src=/usr/src/flash-attention-v2,target=/usr/src/flash-attention-v2 \
@@ -296,7 +303,8 @@ RUN microdnf install -y gcc \
 ENV HF_HUB_OFFLINE=1 \
     PORT=8000 \
     GRPC_PORT=8033 \
-    HOME=/home/vllm
+    HOME=/home/vllm \
+    VLLM_USAGE_SOURCE=production-docker-image
 
 # setup non-root user for OpenShift
 RUN microdnf install -y shadow-utils \
