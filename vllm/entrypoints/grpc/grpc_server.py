@@ -236,8 +236,8 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
 
             last_output_length = len(output.text)
             last_token_count = len(output.token_ids)
-            # Accumulate full output for logging
-            full_output += output.text
+            # Save full output for logging
+            full_output = output.text
 
         # Edit up the first_response for logging purposes only
         if first_response is None:
