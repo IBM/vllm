@@ -49,7 +49,7 @@ def weight_files(model_name, extension=".safetensors", revision=None):
             raise LocalEntryNotFoundError(
                 f"File {filename} of model {model_name} not found in "
                 f"{os.getenv('HUGGINGFACE_HUB_CACHE', 'the local cache')}. "
-                f"Please run `text-generation-server \
+                f"Please run `vllm \
                     download-weights {model_name}` first.")
         files.append(cache_file)
 
