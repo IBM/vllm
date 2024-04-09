@@ -16,7 +16,7 @@ def log_response(inputs: List[str], params: Parameters, prefix_id: str,
     tokenization_time = times.engine_start - times.request_start
     llm_engine_time = times.end - times.engine_start
     time_per_token = _safe_div(llm_engine_time, response.generated_token_count)
-    total_time = times.request_start - times.end
+    total_time = times.end - times.request_start
     output_len = len(response.text)
     short_output = _truncate(response.text, 32)
     short_input = [_truncate(input_, 32) for input_ in inputs]
