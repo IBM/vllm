@@ -1,14 +1,12 @@
 import argparse
 import dataclasses
 import inspect
-import logging
 import time
 import uuid
 from typing import (Any, AsyncIterator, Dict, List, MutableSequence, Optional,
                     Tuple, Union)
 
 import grpc
-from google.protobuf import text_format
 from grpc import StatusCode, aio
 from grpc._cython.cygrpc import AbortError
 from grpc.aio import ServicerContext
@@ -36,7 +34,8 @@ from vllm.entrypoints.grpc.validation import validate_input, validate_params
 from vllm.entrypoints.openai.serving_completion import merge_async_iterators
 from vllm.logger import init_logger
 from vllm.sequence import Logprob
-from vllm.tgis_utils.logits_processors import (LengthPenaltyWarper,
+from vllm.tgis_utils import logs
+from vllm.tgis_utils.logits_processors import (ExpDecayLengthPenaltyWarper,
                                                TypicalLogitsWarperWrapper)
 from vllm.transformers_utils.tokenizer_group import BaseTokenizerGroup
 
@@ -173,11 +172,8 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                 kind_log = "Request"
             else:
                 kind_log = f"Sub-request {i} from batch of {request_count}"
-            self.log_response(req=request,
-                              res=response,
-                              times=timing_infos[i],
-                              kind_log=kind_log,
-                              method_str="generate")
+
+            self._log_unary_response(request=request, response=response, times=timing_infos[i], kind_log=kind_log)
             responses[i] = response
 
         return BatchedGenerationResponse(responses=responses)
@@ -255,6 +251,8 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             return
         first_response.text = full_output
         first_response.generated_token_count = full_output_token_count
+        self._log_streaming_response(request=request, response=first_response, times=timing_info, kind_log="Streaming response")
+
         self.log_response(req=request,
                           res=first_response,
                           times=timing_info,
@@ -540,10 +538,13 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         return input_ids, max_is_token_limit
 
     @staticmethod
-    def truncate(text: str, len_: int) -> bytes:
-        """Truncates a string and escapes control characters, for logging"""
-        text = f"{text:.{len_}}..." if len(text) > len_ else text
-        return text.encode("unicode_escape")
+    def _log_unary_response(request: BatchedGenerationRequest, response: GenerationResponse, times: Times, kind_log: str):
+        logs.log_response(inputs=[r.text for r in request.requests], output=response.text, params=request.params, prefix_id=request.prefix_id, input_token_count=response.input_token_count, generated_token_count=response.generated_token_count, stop_reason=response.stop_reason, times=times, kind_log=kind_log, method_str="generate", logger=logger)
+
+    @staticmethod
+    def _log_streaming_response(request: SingleGenerationRequest, response: GenerationResponse, times: Times):
+        logs.log_response(inputs=[request.text], output=response.text, params=request.params, prefix_id=request.prefix_id, input_token_count=response.input_token_count, generated_token_count=response.generated_token_count, stop_reason=response.stop_reason, times=times, kind_log="Streaming response", method_str="generate", logger=logger)
+
 
     @staticmethod
     async def timed_generator(generator: AsyncIterator[RequestOutput],
@@ -554,56 +555,6 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         async for val in generator:
             yield val
         times.end = time.time()
-
-    def log_response(self,
-                     req: BatchedGenerationRequest | SingleGenerationRequest,
-                     res: GenerationResponse,
-                     times: Times,
-                     kind_log: str,
-                     method_str: str):
-        """Logs responses similar to how the TGIS server does"""
-        # This contains both request validation and tokenization
-        tokenization_time = times.engine_start - times.request_start
-        llm_engine_time = times.end - times.engine_start
-        time_per_token = self.safe_div(llm_engine_time,
-                                       res.generated_token_count, default=0)
-        total_time = times.request_start - times.end
-        output_len = len(res.text)
-        short_output = self.truncate(res.text, 32)
-        short_input = [self.truncate(r.text, 32) for r in req.requests]
-        input_chars = sum(len(r.text) for r in req.requests)
-
-        paramstr = text_format.MessageToString(req.params, as_one_line=True)
-        span_str = (f"{method_str}{{input={short_input} prefix_id={req.prefix_id} "
-                    f"input_chars=[{input_chars}] params={paramstr} "
-                    f"tokenization_time={tokenization_time * 1e3:.2f}ms "
-                    f"queue_and_inference_time={llm_engine_time * 1e3:.2f}ms "
-                    f"time_per_token={time_per_token * 1e3:.2f}ms "
-                    f"total_time={total_time * 1e3:.2f}ms "
-                    f"input_toks={res.input_token_count}}}")
-        stop_reason_str = StopReason.Name(res.stop_reason)
-
-        if res.stop_reason == StopReason.ERROR:
-            level = logging.ERROR
-        elif res.stop_reason in {StopReason.CANCELLED, StopReason.TOKEN_LIMIT}:
-            level = logging.WARN
-        else:
-            level = logging.INFO
-        logger.log(level,
-                   f"{span_str}: {kind_log} generated "
-                   f"{res.generated_token_count} tokens before "
-                   f"{stop_reason_str}, output {output_len} chars: "
-                   f"{short_output}")
-
-    @staticmethod
-    def safe_div(a: float, b: float, *, default: float) -> float:
-        """Simple safe division with a default answer for divide-by-zero.
-        Used for logging where we don't mind incorrect answers.
-        """
-        try:
-            return a / b
-        except ZeroDivisionError:
-            return default
 
     @log_rpc_handler_errors
     async def Tokenize(self, request: BatchedTokenizeRequest,
