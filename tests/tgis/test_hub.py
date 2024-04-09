@@ -1,12 +1,10 @@
-import pytest
 from pathlib import Path
-from vllm.tgis_utils.hub import (
-    convert_files,
-    download_weights,
-    weight_files,
-    weight_hub_files,
-)
+
+import pytest
 from huggingface_hub.utils import LocalEntryNotFoundError
+
+from vllm.tgis_utils.hub import (convert_files, download_weights, weight_files,
+                                 weight_hub_files)
 
 
 def test_convert_files():
@@ -31,7 +29,9 @@ def test_weight_hub_files():
 
 def test_weight_hub_files_llm():
     filenames = weight_hub_files("bigscience/bloom")
-    assert filenames == [f"model_{i:05d}-of-00072.safetensors" for i in range(1, 73)]
+    assert filenames == [
+        f"model_{i:05d}-of-00072.safetensors" for i in range(1, 73)
+    ]
 
 
 def test_weight_hub_files_empty():

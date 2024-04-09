@@ -1,23 +1,21 @@
 import concurrent
+import datetime
 import glob
+import json
 import os
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-from typing import Optional
+from pathlib import Path
+from typing import Dict, List, Optional
 
+import torch
 from huggingface_hub import HfApi, hf_hub_download, try_to_load_from_cache
 from huggingface_hub.utils import LocalEntryNotFoundError
-
-from tqdm import tqdm
-import datetime
-import torch
-import json
-
 from loguru import logger
-from pathlib import Path
-from safetensors.torch import save_file, load_file, _find_shared_tensors, _is_complete
-from typing import List, Dict
-from collections import defaultdict
+from safetensors.torch import (_find_shared_tensors, _is_complete, load_file,
+                               save_file)
+from tqdm import tqdm
 
 TRUST_REMOTE_CODE = os.getenv("TRUST_REMOTE_CODE") == "true"
 
@@ -27,7 +25,7 @@ def weight_hub_files(model_name,
                      revision=None,
                      auth_token=None):
     """Get the safetensors filenames on the hub"""
-    exts = [extension] if type(extension) == str else extension
+    exts = [extension] if isinstance(extension, str) else extension
     api = HfApi()
     info = api.model_info(model_name, revision=revision, token=auth_token)
     filenames = [
@@ -51,8 +49,8 @@ def weight_files(model_name, extension=".safetensors", revision=None):
             raise LocalEntryNotFoundError(
                 f"File {filename} of model {model_name} not found in "
                 f"{os.getenv('HUGGINGFACE_HUB_CACHE', 'the local cache')}. "
-                f"Please run `text-generation-server download-weights {model_name}` first."
-            )
+                f"Please run `text-generation-server \
+                    download-weights {model_name}` first.")
         files.append(cache_file)
 
     return files
@@ -154,13 +152,19 @@ def _remove_duplicate_names(
         complete_names = set(
             [name for name in shared if _is_complete(state_dict[name])])
         if not complete_names:
-            raise RuntimeError(
-                f"Error while trying to find names to remove to save state dict, but found no suitable name to keep for saving amongst: {shared}. None is covering the entire storage.Refusing to save/load the model since you could be storing much more memory than needed. Please refer to https://huggingface.co/docs/safetensors/torch_shared_tensors for more information. Or open an issue."
-            )
+            raise RuntimeError(f"Error while trying to find names to remove \
+                    to save state dict, but found no suitable name to \
+                        keep for saving amongst: {shared}. None is covering \
+                            the entire storage.Refusing to save/load the model \
+                                since you could be storing much more \
+                                    memory than needed. Please refer to\
+            https://huggingface.co/docs/safetensors/torch_shared_tensors \
+                                            for more information. \
+                                                Or open an issue.")
 
         keep_name = sorted(list(complete_names))[0]
 
-        # Mecanism to preferentially select keys to keep
+        # Mechanism to preferentially select keys to keep
         # coming from the on-disk file to allow
         # loading models saved with a different choice
         # of keep_name
@@ -217,7 +221,7 @@ def convert_index_file(source_file: Path, dest_file: Path,
     weight_file_map = {s.name: d.name for s, d in zip(pt_files, sf_files)}
 
     logger.info(
-        f"Converting pytorch .bin.index.json files to .safetensors.index.json")
+        "Converting pytorch .bin.index.json files to .safetensors.index.json")
     with open(source_file, "r") as f:
         index = json.load(f)
 

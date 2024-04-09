@@ -1,10 +1,8 @@
 import os
-from enum import Enum
+from pathlib import Path
 from typing import Optional
 
 import typer
-
-from pathlib import Path
 
 app = typer.Typer()
 
@@ -35,22 +33,19 @@ def download_weights(
         if not hub.local_weight_files(hub.get_model_path(model_name, revision),
                                       ".safetensors"):
             if ".bin" not in extensions:
-                print(
-                    ".safetensors weights not found, downloading pytorch weights to convert..."
-                )
+                print(".safetensors weights not found, \
+                    downloading pytorch weights to convert...")
                 hub.download_weights(model_name,
                                      ".bin",
                                      revision=revision,
                                      auth_token=token)
 
-            print(
-                ".safetensors weights not found, converting from pytorch weights..."
-            )
+            print(".safetensors weights not found, \
+                    converting from pytorch weights...")
             convert_to_safetensors(model_name, revision)
         elif not any(f.endswith(".safetensors") for f in files):
-            print(
-                ".safetensors weights not found on hub, but were found locally. Remove them first to re-convert"
-            )
+            print(".safetensors weights not found on hub, \
+                    but were found locally. Remove them first to re-convert")
     if auto_convert:
         convert_to_fast_tokenizer(model_name, revision)
 
@@ -71,7 +66,6 @@ def convert_to_safetensors(
             f"Found more than one .bin.index.json file: {local_pt_index_files}"
         )
         return
-
     if not local_pt_files:
         print("No pytorch .bin files found to convert")
         return
@@ -87,9 +81,8 @@ def convert_to_safetensors(
     ]
 
     if any(os.path.exists(p) for p in local_st_files):
-        print(
-            "Existing .safetensors weights found, remove them first to reconvert"
-        )
+        print("Existing .safetensors weights found, \
+                remove them first to reconvert")
         return
 
     try:
@@ -113,14 +106,14 @@ def convert_to_safetensors(
 
     if local_pt_index_file:
         local_pt_index_file = Path(local_pt_index_file)
-        st_prefix = local_pt_index_file.stem.removeprefix('pytorch_').rstrip(
-            '.bin.index')
-        local_st_index_file = local_pt_index_file.parent / f"{st_prefix}.safetensors.index.json"
+        st_prefix = local_pt_index_file.stem.removeprefix(
+            "pytorch_").removesuffix(".bin.index")
+        local_st_index_file = (local_pt_index_file.parent /
+                               f"{st_prefix}.safetensors.index.json")
 
         if os.path.exists(local_st_index_file):
-            print(
-                "Existing .safetensors.index.json file found, remove it first to reconvert"
-            )
+            print("Existing .safetensors.index.json file found, \
+                    remove it first to reconvert")
             return
 
         hub.convert_index_file(local_pt_index_file, local_st_index_file,
@@ -153,6 +146,7 @@ def convert_to_fast_tokenizer(
         output_path = model_path
 
     import transformers
+
     tokenizer = transformers.AutoTokenizer.from_pretrained(model_name,
                                                            revision=revision)
     tokenizer.save_pretrained(output_path)
