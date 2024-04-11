@@ -76,7 +76,7 @@ class PagedAttention:
             value_cache,
             slot_mapping.flatten(),
             kv_cache_dtype,
-            # kv_scale,
+            kv_scale,
         )
 
     @staticmethod
@@ -123,7 +123,7 @@ class PagedAttention:
                 max_context_len,
                 alibi_slopes,
                 kv_cache_dtype,
-                # kv_scale,
+                kv_scale,
             )
         else:
             # Run PagedAttention V2.
@@ -155,7 +155,7 @@ class PagedAttention:
                 max_context_len,
                 alibi_slopes,
                 kv_cache_dtype,
-                # kv_scale,
+                kv_scale,
             )
         return output
 
