@@ -2,6 +2,7 @@ import concurrent
 import datetime
 import glob
 import json
+import logging
 import os
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -12,12 +13,12 @@ from typing import Dict, List, Optional
 import torch
 from huggingface_hub import HfApi, hf_hub_download, try_to_load_from_cache
 from huggingface_hub.utils import LocalEntryNotFoundError
-from loguru import logger
 from safetensors.torch import (_find_shared_tensors, _is_complete, load_file,
                                save_file)
 from tqdm import tqdm
 
 TRUST_REMOTE_CODE = os.getenv("TRUST_REMOTE_CODE") == "true"
+logger = logging.getLogger(__name__)
 
 
 def weight_hub_files(model_name,
