@@ -257,7 +257,7 @@ FROM base AS vllm
 WORKDIR /vllm-staging
 # COPY files from various places into a staging directory
 COPY --link vllm vllm
-COPY --from=prebuilt-wheel --link /workspace/vllm/*.so vllm/
+COPY --from=build --link /workspace/vllm/*.so vllm/
 COPY --from=gen-protos --link /workspace/vllm/entrypoints/grpc/pb vllm/entrypoints/grpc/pb
 
 # custom COPY command to use umask to control permissions and grant permissions

@@ -49,7 +49,7 @@ def paged_attention_v1(
     vllm_ops.paged_attention_v1(out, query, key_cache, value_cache,
                                 num_kv_heads, scale, block_tables,
                                 context_lens, block_size, max_context_len,
-                                alibi_slopes, kv_cache_dtype)#, kv_scale)
+                                alibi_slopes, kv_cache_dtype, kv_scale)
 
 
 def paged_attention_v2(
@@ -73,8 +73,8 @@ def paged_attention_v2(
     vllm_ops.paged_attention_v2(out, exp_sum, max_logits, tmp_out, query,
                                 key_cache, value_cache, num_kv_heads, scale,
                                 block_tables, context_lens, block_size,
-                                max_context_len, alibi_slopes, kv_cache_dtype)
-                                # kv_scale)
+                                max_context_len, alibi_slopes, kv_cache_dtype,
+                                kv_scale)
 
 
 # pos encoding ops
@@ -173,7 +173,7 @@ def reshape_and_cache(
     kv_scale: float,
 ) -> None:
     vllm_cache_ops.reshape_and_cache(key, value, key_cache, value_cache,
-                                     slot_mapping, kv_cache_dtype)#, kv_scale)
+                                     slot_mapping, kv_cache_dtype, kv_scale)
 
 
 def copy_blocks(key_caches: torch.Tensor, value_caches: torch.Tensor,
