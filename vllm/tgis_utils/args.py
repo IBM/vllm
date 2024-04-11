@@ -114,5 +114,9 @@ def postprocess_tgis_args(args: argparse.Namespace) -> argparse.Namespace:
     if args.max_logprobs < MAX_TOP_N_TOKENS + 1:
         logger.info("Setting max_logprobs to %d", MAX_TOP_N_TOKENS + 1)
         args.max_logprobs = MAX_TOP_N_TOKENS + 1
+    # Turn off vLLM per-request logging because the TGIS server logs each
+    # response
+    if not args.disable_log_requests:
+        args.disable_log_requests = True
 
     return args

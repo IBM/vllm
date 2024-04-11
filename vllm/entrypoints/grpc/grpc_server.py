@@ -1,4 +1,5 @@
 import argparse
+import dataclasses
 import inspect
 import time
 import uuid
@@ -33,11 +34,22 @@ from vllm.entrypoints.grpc.validation import validate_input, validate_params
 from vllm.entrypoints.openai.serving_completion import merge_async_iterators
 from vllm.logger import init_logger
 from vllm.sequence import Logprob
+from vllm.tgis_utils import logs
 from vllm.tgis_utils.logits_processors import (ExpDecayLengthPenaltyWarper,
                                                TypicalLogitsWarperWrapper)
 from vllm.transformers_utils.tokenizer_group import BaseTokenizerGroup
 
 logger = init_logger(__name__)
+
+@dataclasses.dataclass
+class Times:
+    """Container tracking times (in seconds) when requests start and finish """
+    # When control enters Generate or GenerateStream
+    request_start: float
+    # When the request is sent to the vLLM engine
+    engine_start: float = 0
+    # When the stream from the vLLM engine closes
+    end: float = 0
 
 
 def with_default(value: Any, default: Any) -> Any:
@@ -99,6 +111,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
     @log_rpc_handler_errors
     async def Generate(self, request: BatchedGenerationRequest,
                        context: ServicerContext) -> BatchedGenerationResponse:
+        start_time = time.time()
         request_id = self.request_id(context)
         sampling_params, deadline = await self._validate_and_convert_params(
             request.params, context)
@@ -107,16 +120,23 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         request_count = len(request.requests)
 
         generators = []
+        timing_infos = []
         max_is_token_limit = [False] * request_count
         for i, req in enumerate(request.requests):
             input_ids, max_is_token_limit[i]\
                 = await self._validate_prompt_and_tokenize(
                     sampling_params, truncate_input_tokens, req.text, context)
+            timing_info = Times(request_start=start_time)
+            timing_infos.append(timing_info)
             generators.append(
-                self.engine.generate(None,
-                                     sampling_params,
-                                     f"{request_id}-{i}",
-                                     prompt_token_ids=input_ids))
+                self.timed_generator(
+                    # prompt is supplied for observability, the text is not
+                    # re-tokenized when `prompt_token_ids` is supplied
+                    self.engine.generate(prompt=req.text,
+                                         sampling_params=sampling_params,
+                                         request_id=f"{request_id}-{i}",
+                                         prompt_token_ids=input_ids),
+                    timing_info))
 
         # TODO handle cancellation
         result_generator: AsyncIterator[Tuple[
@@ -140,14 +160,20 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                 break
 
         for i, res in enumerate(responses):
-            # Text prompt is not returned if only token_ids are passed
-            res.prompt = request.requests[i].text
             response = self._convert_output(res.outputs[0], resp_options,
                                             max_is_token_limit[i],
                                             time_limit_reached)
-            responses[i] = self._convert_input_details(res, resp_options,
+            response = self._convert_input_details(res, resp_options,
                                                        sampling_params,
                                                        response)
+            if request_count == 1:
+                kind_log = "Request"
+            else:
+                kind_log = f"Sub-request {i} from batch of {request_count}"
+
+            self._log_unary_response(request=request, response=response,
+                                     times=timing_infos[i], kind_log=kind_log)
+            responses[i] = response
 
         return BatchedGenerationResponse(responses=responses)
 
@@ -155,6 +181,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
     async def GenerateStream(
             self, request: SingleGenerationRequest,
             context: ServicerContext) -> AsyncIterator[GenerationResponse]:
+        timing_info = Times(request_start=time.time())
         request_id = self.request_id(context)
         sampling_params, deadline = await self._validate_and_convert_params(
             request.params, context)
@@ -165,24 +192,29 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             sampling_params, truncate_input_tokens, request.request.text,
             context)
 
-        result_generator = self.engine.generate(
-            prompt=None,
-            sampling_params=sampling_params,
-            request_id=request_id,
-            prompt_token_ids=input_ids,
+        result_generator = self.timed_generator(
+            self.engine.generate(
+                # prompt is supplied for observability, the text is not
+                # re-tokenized when `prompt_token_ids` is supplied
+                prompt=request.request.text,
+                sampling_params=sampling_params,
+                request_id=request_id,
+                prompt_token_ids=input_ids,
+            ),
+            timing_info
         )
 
         resp_options = request.params.response
 
         first = True
+        first_response = None
         last_output_length = 0
         last_token_count = 0
         time_limit_reached = False
+        full_output = ""
         #TODO handle cancellation
         async for result in result_generator:
             if first:
-                # Text prompt is not returned if only token_ids are passed
-                result.prompt = request.request.text
                 first_response = self._convert_input_details(
                     result, resp_options, sampling_params,
                     GenerationResponse())
@@ -204,6 +236,17 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
 
             last_output_length = len(output.text)
             last_token_count = len(output.token_ids)
+            # Save full output for logging
+            full_output = output.text
+
+        # Edit up the first_response for logging purposes only
+        if first_response is None:
+            # We didn't output anything!
+            return
+        first_response.text = full_output
+        first_response.generated_token_count = last_token_count
+        self._log_streaming_response(request=request, response=first_response,
+                                     times=timing_info)
 
     def _convert_input_details(
             self, result: RequestOutput, resp_options: ResponseOptions,
@@ -481,6 +524,35 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             max_is_token_limit = True
 
         return input_ids, max_is_token_limit
+
+    @staticmethod
+    def _log_unary_response(request: BatchedGenerationRequest,
+                            response: GenerationResponse, times: Times,
+                            kind_log: str):
+        logs.log_response(inputs=[r.text for r in request.requests],
+                          response=response, params=request.params,
+                          prefix_id=request.prefix_id, times=times,
+                          kind_log=kind_log, method_str="generate",
+                          logger=logger)
+
+    @staticmethod
+    def _log_streaming_response(request: SingleGenerationRequest,
+                                response: GenerationResponse, times: Times):
+        logs.log_response(inputs=[request.request.text], response=response,
+                          params=request.params, prefix_id=request.prefix_id,
+                          times=times, kind_log="Streaming response",
+                          method_str="generate_stream", logger=logger)
+
+
+    @staticmethod
+    async def timed_generator(generator: AsyncIterator[RequestOutput],
+                              times: Times) -> AsyncIterator[RequestOutput]:
+        """Injects some timing data around each result generator from the
+        LLMEngine"""
+        times.engine_start = time.time()
+        async for val in generator:
+            yield val
+        times.end = time.time()
 
     @log_rpc_handler_errors
     async def Tokenize(self, request: BatchedTokenizeRequest,
