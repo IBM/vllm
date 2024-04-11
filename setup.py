@@ -5,7 +5,7 @@ import re
 import subprocess
 import sys
 from shutil import which
-from typing import List
+from typing import Dict, List, Optional
 
 import torch
 from packaging.version import Version, parse
@@ -360,6 +360,18 @@ def get_requirements() -> List[str]:
     return requirements
 
 
+def get_extra_requirements() -> Optional[Dict[str, List[str]]]:
+    if _is_cuda():
+        return {"ray": ["ray >= 2.9"]}
+    if _is_hip():
+        return {"ray": ["ray == 2.9.3"]}
+    if _is_neuron():
+        return None
+    if _is_cpu():
+        return None
+    raise ValueError("Unsupported platform, please use CUDA, ROCM or Neuron.")
+
+
 ext_modules = []
 
 if _is_cuda():
@@ -403,6 +415,7 @@ setup(
                                     "tests")),
     python_requires=">=3.8",
     install_requires=get_requirements(),
+    extras_require=get_extra_requirements(),
     ext_modules=ext_modules,
     cmdclass={"build_ext": cmake_build_ext} if not _is_neuron() else {},
     package_data=package_data,
