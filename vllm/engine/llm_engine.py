@@ -249,6 +249,9 @@ class LLMEngine:
         if model_executor := getattr(self, "model_executor", None):
             model_executor.shutdown()
 
+    def get_tokenizer_group(self) -> BaseTokenizerGroup:
+        return self.tokenizer
+
     def get_tokenizer(self) -> "PreTrainedTokenizer":
         return self.tokenizer.get_lora_tokenizer(None)
 
