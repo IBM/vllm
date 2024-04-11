@@ -159,13 +159,14 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                 time_limit_reached = True
                 break
 
-        for i, res in enumerate(responses):
+        for i in range(len(responses)):
+            res = responses[i]
             response = self._convert_output(res.outputs[0], resp_options,
                                             max_is_token_limit[i],
                                             time_limit_reached)
             response = self._convert_input_details(res, resp_options,
-                                                       sampling_params,
-                                                       response)
+                                                   sampling_params,
+                                                   response)
             if request_count == 1:
                 kind_log = "Request"
             else:
