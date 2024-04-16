@@ -5,7 +5,7 @@ on:
 
   push:
     branches:
-      - release
+      - release-cli-tools
     paths-ignore:
       - "**.md"
       - "proto/**"
