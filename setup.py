@@ -419,4 +419,7 @@ setup(
     ext_modules=ext_modules,
     cmdclass={"build_ext": cmake_build_ext} if not _is_neuron() else {},
     package_data=package_data,
+    entry_points={
+        "console_scripts": ["vllm=vllm.cli:app"],
+    },
 )
