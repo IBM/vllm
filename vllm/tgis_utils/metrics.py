@@ -12,9 +12,13 @@ from vllm.entrypoints.grpc.pb.generation_pb2 import BatchedTokenizeRequest, Batc
 _duration_buckets = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50]
 
 class FailureReasonLabel(StrEnum):
-    VALIDATION = auto()
-    CANCELLED = auto()
-    CONC_LIMIT = auto()
+    VALIDATION = auto()  # request validation failed
+    CANCELLED = auto()  # TODO: cancellation handling not implemented
+    CONC_LIMIT = auto()  # TODO: is this applicable for vLLM?
+    OOM = auto()  # gpu OOM error
+    GENERATE = auto()  # some error happened while running a text generation request
+    TIMEOUT = auto()  # grpc deadline exceeded
+    UNKNOWN = auto()
 
 
 class ServiceMetrics:
@@ -44,14 +48,15 @@ class ServiceMetrics:
     def observe_queue_time(self, engine_output: RequestOutput):
         self.tgi_request_queue_duration.observe(engine_output.metrics.time_in_queue)
 
-    def observe_request_failure(self, reason: FailureReasonLabel):
+    def count_request_failure(self, reason: FailureReasonLabel):
         self.tgi_request_failure.labels({"err": reason}).inc(1)
 
 
-class TGISStatLogger:
+class TGISStatLogger(StatLogger):
     """Instance wraps the vLLM StatLogger to report TGIS metric names for compatibility"""
 
     def __init__(self, vllm_stat_logger: StatLogger, max_sequence_len: int):
+        # Not calling super-init because we're wrapping and delegating to vllm_stat_logger
         self._vllm_stat_logger = vllm_stat_logger
 
         self.tgi_queue_size = Gauge("tgi_queue_size", documentation="Current number of queued requests")
@@ -62,6 +67,9 @@ class TGISStatLogger:
         sequence_len_buckets = [max_sequence_len / 64.0 * (x + 1) for x in range(64)]
         self.tgi_request_input_length = Histogram("tgi_request_input_length", documentation="Request input length in tokens", buckets=sequence_len_buckets)
         self.tgi_request_generated_tokens = Histogram("tgi_request_generated_tokens", documentation="Number of tokens generated for request", buckets=sequence_len_buckets)
+
+    def info(self, type: str, obj: object) -> None:
+        self._vllm_stat_logger.info(type, object)
 
     def log(self, stats: Stats) -> None:
         # First, log the vLLM stats
