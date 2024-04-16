@@ -37,7 +37,8 @@ from vllm.sequence import Logprob
 from vllm.tgis_utils import logs
 from vllm.tgis_utils.logits_processors import (ExpDecayLengthPenaltyWarper,
                                                TypicalLogitsWarperWrapper)
-from vllm.tgis_utils.metrics import TGISStatLogger, ServiceMetrics, FailureReasonLabel
+from vllm.tgis_utils.metrics import (FailureReasonLabel, ServiceMetrics,
+                                     TGISStatLogger)
 from vllm.transformers_utils.tokenizer_group import BaseTokenizerGroup
 
 logger = init_logger(__name__)
@@ -118,7 +119,9 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
 
         # Swap in the special TGIS stats logger
         vllm_stat_logger = self.engine.engine.stat_logger
-        tgis_stats_logger = TGISStatLogger(vllm_stat_logger=vllm_stat_logger, max_sequence_len=self.config.max_model_len)
+        tgis_stats_logger = TGISStatLogger(
+            vllm_stat_logger=vllm_stat_logger,
+            max_sequence_len=self.config.max_model_len)
         # 🌶️🌶️🌶️ sneaky sneak
         self.engine.engine.stat_logger = tgis_stats_logger
 
