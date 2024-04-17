@@ -287,7 +287,7 @@ COPY --from=gen-protos --link /workspace/vllm/entrypoints/grpc/pb vllm/entrypoin
 # We used base cuda image because pytorch installs its own cuda libraries.
 # However pynccl depends on cuda libraries so we had to switch to the runtime image
 # In the future it would be nice to get a container with pytorch and cuda without duplicating cuda
-FROM cuda-runtime AS vllm-openai
+FROM vllm AS vllm-openai
 
 WORKDIR /workspace
 
@@ -311,9 +311,6 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # Install flash attention (from pre-built wheel)
 RUN --mount=type=bind,from=flash-attn-builder,src=/usr/src/flash-attention-v2,target=/usr/src/flash-attention-v2 \
     pip3 install /usr/src/flash-attention-v2/*.whl --no-cache-dir
-
-# vLLM will not be installed in site-packages
-COPY --from=vllm --link /workspace/ ./
 
 # Triton needs a CC compiler
 RUN microdnf install -y gcc \
