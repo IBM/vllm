@@ -191,19 +191,19 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 ## Extension Cache #############################################################
 # Instead of compiling artifacts every build just copy from pre-built wheel
 # This might not work if the PyTorch and CUDA versions don't match!
-FROM base as prebuilt-wheel
+# FROM base as prebuilt-wheel
 
-RUN microdnf install -y \
-        unzip \
-    && microdnf clean all
+# RUN microdnf install -y \
+#         unzip \
+#     && microdnf clean all
 
-ARG PYTHON_VERSION
-# 0.4.0.post1 is built for CUDA 12.1 and PyTorch 2.1.2
-ARG VLLM_WHEEL_VERSION=0.4.0.post1
+# ARG PYTHON_VERSION
+# # 0.4.0.post1 is built for CUDA 12.1 and PyTorch 2.1.2
+# ARG VLLM_WHEEL_VERSION=0.4.0.post1
 
-RUN curl -Lo vllm.whl https://github.com/vllm-project/vllm/releases/download/v${VLLM_WHEEL_VERSION}/vllm-${VLLM_WHEEL_VERSION}-cp${PYTHON_VERSION//.}-cp${PYTHON_VERSION//.}-manylinux1_x86_64.whl \
-    && unzip vllm.whl \
-    && rm vllm.whl
+# RUN curl -Lo vllm.whl https://github.com/vllm-project/vllm/releases/download/v${VLLM_WHEEL_VERSION}/vllm-${VLLM_WHEEL_VERSION}-cp${PYTHON_VERSION//.}-cp${PYTHON_VERSION//.}-manylinux1_x86_64.whl \
+#     && unzip vllm.whl \
+#     && rm vllm.whl
 # compiled extensions located at /workspace/vllm/*.so
 
 #################### FLASH_ATTENTION Build IMAGE ####################
@@ -261,7 +261,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 ## vLLM installation IMAGE ##########################################################
 # image with vLLM installed
-FROM base AS vllm
+FROM cuda-base AS vllm
 
 WORKDIR /vllm-workspace
 
@@ -271,8 +271,8 @@ RUN --mount=type=bind,from=build,src=/workspace/dist,target=/vllm-workspace/dist
     pip install dist/*.whl --verbose
  
 # COPY files from various places into a staging directory
-COPY --link vllm vllm
-COPY --from=prebuilt-wheel --link /workspace/vllm/*.so vllm/
+# COPY --link vllm vllm
+# COPY --from=prebuilt-wheel --link /workspace/vllm/*.so vllm/
 COPY --from=gen-protos --link /workspace/vllm/entrypoints/grpc/pb vllm/entrypoints/grpc/pb
 
 # custom COPY command to use umask to control permissions and grant permissions
