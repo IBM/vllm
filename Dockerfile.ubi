@@ -261,7 +261,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 ## vLLM installation IMAGE ##########################################################
 # image with vLLM installed
-FROM cuda-base AS vllm
+FROM cuda-runtime AS vllm
 
 WORKDIR /vllm-workspace
 
