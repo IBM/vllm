@@ -297,7 +297,7 @@ ENV PATH=/opt/vllm/bin/:$PATH
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=bind,source=requirements-common.txt,target=requirements-common.txt \
-    --mount=type=bind,source=requirements-cuda.txt,target=requirements-cuda-cuda.txt \
+    --mount=type=bind,source=requirements-cuda.txt,target=requirements-cuda.txt \
     pip3 install \
         # requirements-cuda installs the requirements-common from within
         -r requirements-cuda.txt \
