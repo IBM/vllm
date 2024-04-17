@@ -5,4 +5,3 @@ packaging
 setuptools>=49.4.0
 torch==2.2.1
 wheel
-typer==0.9.*
