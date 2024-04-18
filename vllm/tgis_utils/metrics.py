@@ -128,7 +128,6 @@ class TGISStatLogger(StatLogger):
                 "method": "next_token"
             }).observe(tpot)
 
-        # "num_prompt_tokens_lst"
         # These metrics depend on open PR: https://github.com/vllm-project/vllm/pull/2764
         if hasattr(stats, "num_prompt_tokens_lst"):
             for input_len in stats.num_prompt_tokens_lst:
