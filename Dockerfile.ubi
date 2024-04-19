@@ -146,7 +146,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 
 ## Builder #####################################################################
-FROM dev AS build
+FROM cuda-base AS build
 
 # install build dependencies
 RUN --mount=type=cache,target=/root/.cache/pip \
@@ -265,7 +265,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 ## vLLM installation IMAGE ##########################################################
 # image with vLLM installed
-FROM dev AS vllm
+FROM cuda-base AS vllm
 
 WORKDIR /vllm-workspace
 
