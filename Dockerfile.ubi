@@ -1,3 +1,6 @@
+# Please update any changes made here to
+# docs/source/dev/dockerfile-ubi/dockerfile-ubi.rst
+
 ## Global Args #################################################################
 ARG BASE_UBI_IMAGE_TAG=9.3-1612
 ARG PYTHON_VERSION=3.11
@@ -262,8 +265,6 @@ WORKDIR /vllm-workspace
 RUN --mount=type=bind,from=build,src=/workspace/dist,target=/vllm-workspace/dist \
     --mount=type=cache,target=/root/.cache/pip \
     pip install dist/*.whl --verbose
- 
-COPY --from=gen-protos --link /workspace/vllm/entrypoints/grpc/pb vllm/entrypoints/grpc/pb
 
 ## Test ########################################################################
 FROM vllm AS test
@@ -284,6 +285,8 @@ WORKDIR /workspace
 # Create release python environment, this should have vllm too
 COPY --from=vllm --link /opt/vllm /opt/vllm
 ENV PATH=/opt/vllm/bin/:$PATH
+
+COPY --from=gen-protos --link /workspace/vllm/entrypoints/grpc/pb vllm/entrypoints/grpc/pb
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=bind,source=requirements-common.txt,target=requirements-common.txt \
