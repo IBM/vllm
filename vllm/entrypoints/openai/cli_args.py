@@ -108,7 +108,7 @@ def make_arg_parser():
         action="append",
         default=[],
         help="Additional ASGI middleware to apply to the app. "
-        "We accept multiple --middleware arguments. "
+        "We multiple --middleware arguments. "
         "The value should be an import path. "
         "If a function is provided, vLLM will add it to the server "
         "using @app.middleware('http'). "
