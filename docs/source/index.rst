@@ -101,6 +101,7 @@ Documentation
    dev/sampling_params
    dev/engine/engine_index
    dev/kernel/paged_attention
+   dev/dockerfile-ubi/dockerfile-ubi
 
 Indices and tables
 ==================
