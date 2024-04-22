@@ -146,7 +146,6 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 
 ## Builder #####################################################################
-# need something with python and cuda?
 FROM dev AS build
 
 # install build dependencies
@@ -182,9 +181,9 @@ ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 
 ENV CCACHE_DIR=/root/.cache/ccache
 
-# TODO: Try running the build-ext command first to see
-# if it can pick up the *.so files 
-# to speed up builds
+# run the build_ext command first to reuse 
+# the *so files
+RUN python3 setup.py build_ext --inplace
 
 RUN --mount=type=cache,target=/root/.cache/ccache \
     --mount=type=cache,target=/root/.cache/pip \
@@ -201,19 +200,19 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 ## Extension Cache #############################################################
 # Instead of compiling artifacts every build just copy from pre-built wheel
 # This might not work if the PyTorch and CUDA versions don't match!
-# FROM base as prebuilt-wheel
+FROM base as prebuilt-wheel
 
-# RUN microdnf install -y \
-#         unzip \
-#     && microdnf clean all
+RUN microdnf install -y \
+        unzip \
+    && microdnf clean all
 
-# ARG PYTHON_VERSION
-# # 0.4.0.post1 is built for CUDA 12.1 and PyTorch 2.1.2
-# ARG VLLM_WHEEL_VERSION=0.4.0.post1
+ARG PYTHON_VERSION
+# 0.4.0.post1 is built for CUDA 12.1 and PyTorch 2.1.2
+ARG VLLM_WHEEL_VERSION=0.4.0.post1
 
-# RUN curl -Lo vllm.whl https://github.com/vllm-project/vllm/releases/download/v${VLLM_WHEEL_VERSION}/vllm-${VLLM_WHEEL_VERSION}-cp${PYTHON_VERSION//.}-cp${PYTHON_VERSION//.}-manylinux1_x86_64.whl \
-#     && unzip vllm.whl \
-#     && rm vllm.whl
+RUN curl -Lo vllm.whl https://github.com/vllm-project/vllm/releases/download/v${VLLM_WHEEL_VERSION}/vllm-${VLLM_WHEEL_VERSION}-cp${PYTHON_VERSION//.}-cp${PYTHON_VERSION//.}-manylinux1_x86_64.whl \
+    && unzip vllm.whl \
+    && rm vllm.whl
 # compiled extensions located at /workspace/vllm/*.so
 
 #################### FLASH_ATTENTION Build IMAGE ####################
@@ -235,27 +234,6 @@ WORKDIR /usr/src/flash-attention-v2
 RUN pip --verbose wheel flash-attn==${FLASH_ATTN_VERSION} \
     --no-build-isolation --no-deps --no-cache-dir
 
-
-## Test ########################################################################
-FROM dev AS test
-
-WORKDIR /vllm-workspace
-# ADD is used to preserve directory structure
-# NB: Could leak secrets from local context, the test image should not be pushed
-# to a registry
-ADD . /vllm-workspace/
-# copy pytorch extensions separately to avoid having to rebuild
-# when python code changes
-COPY --from=build /workspace/vllm/*.so /vllm-workspace/vllm/
-# Install flash attention (from pre-built wheel)
-RUN --mount=type=bind,from=flash-attn-builder,src=/usr/src/flash-attention-v2,target=/usr/src/flash-attention-v2 \
-    pip install /usr/src/flash-attention-v2/*.whl --no-cache-dir
-# ignore build dependencies installation because we are using pre-complied extensions
-RUN rm pyproject.toml
-RUN --mount=type=cache,target=/root/.cache/pip \
-    VLLM_USE_PRECOMPILED=1 pip install . --verbose
-
-
 ## Proto Compilation ###########################################################
 FROM python-base AS gen-protos
 
@@ -271,7 +249,6 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 ## vLLM installation IMAGE ##########################################################
 # image with vLLM installed
-# need something with python and cuda?
 FROM dev AS vllm
 
 WORKDIR /vllm-workspace
@@ -281,17 +258,14 @@ RUN --mount=type=bind,from=build,src=/workspace/dist,target=/vllm-workspace/dist
     --mount=type=cache,target=/root/.cache/pip \
     pip install dist/*.whl --verbose
  
-# COPY files from various places into a staging directory
-# COPY --link vllm vllm
-# COPY --from=prebuilt-wheel --link /workspace/vllm/*.so vllm/
 COPY --from=gen-protos --link /workspace/vllm/entrypoints/grpc/pb vllm/entrypoints/grpc/pb
 
-# custom COPY command to use umask to control permissions and grant permissions
-# to the group
-# RUN umask 002 \
-#     && cp --recursive --no-preserve=all /vllm-staging/vllm /workspace/vllm \
-#     # not strictly needed, but .so files typically have executable bits
-#     && chmod +x /workspace/vllm/*.so
+## Test ########################################################################
+FROM vllm AS test
+
+# Install flash attention (from pre-built wheel)
+RUN --mount=type=bind,from=flash-attn-builder,src=/usr/src/flash-attention-v2,target=/usr/src/flash-attention-v2 \
+    pip install /usr/src/flash-attention-v2/*.whl --no-cache-dir
 
 ## Release #####################################################################
 # Note from the non-UBI Dockerfile:
@@ -302,7 +276,7 @@ FROM cuda-runtime AS vllm-openai
 
 WORKDIR /workspace
 
-# Create release python environment, this should have vllm too?
+# Create release python environment, this should have vllm too
 COPY --from=vllm --link /opt/vllm /opt/vllm
 ENV PATH=/opt/vllm/bin/:$PATH
 
