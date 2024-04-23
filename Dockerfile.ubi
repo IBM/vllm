@@ -147,6 +147,18 @@ RUN --mount=type=cache,target=/root/.cache/pip \
         -r requirements-cuda.txt \
         -r requirements-dev.txt
 
+## Proto Compilation ###########################################################
+FROM python-base AS gen-protos
+
+RUN microdnf install -y \
+        make \
+        findutils \
+    && microdnf clean all
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=bind,source=Makefile,target=Makefile \
+    --mount=type=bind,source=proto,target=proto \
+    make gen-protos
 
 ## Builder #####################################################################
 FROM dev AS build
@@ -192,6 +204,8 @@ RUN python3 setup.py build_ext --inplace
 
 # Copy the entire directory before building wheel
 COPY vllm vllm
+# Copy over the generated *.pb2 files
+COPY --from=gen-protos --link /workspace/vllm/entrypoints/grpc/pb vllm/entrypoints/grpc/pb
 
 RUN --mount=type=cache,target=/root/.cache/ccache \
     --mount=type=cache,target=/root/.cache/pip \
@@ -203,7 +217,6 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
 # we need to remove it manually
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip cache remove vllm_nccl*
-
 
 ## Extension Cache #############################################################
 # Instead of compiling artifacts every build just copy from pre-built wheel
@@ -242,19 +255,6 @@ WORKDIR /usr/src/flash-attention-v2
 RUN pip --verbose wheel flash-attn==${FLASH_ATTN_VERSION} \
     --no-build-isolation --no-deps --no-cache-dir
 
-## Proto Compilation ###########################################################
-FROM python-base AS gen-protos
-
-RUN microdnf install -y \
-        make \
-        findutils \
-    && microdnf clean all
-
-RUN --mount=type=cache,target=/root/.cache/pip \
-    --mount=type=bind,source=Makefile,target=Makefile \
-    --mount=type=bind,source=proto,target=proto \
-    make gen-protos
-
 ## vLLM installation IMAGE ##########################################################
 # image with vLLM installed
 FROM dev AS vllm
@@ -265,7 +265,7 @@ WORKDIR /vllm-workspace
 RUN --mount=type=bind,from=build,src=/workspace/dist,target=/vllm-workspace/dist \
     --mount=type=cache,target=/root/.cache/pip \
     pip install dist/*.whl --verbose
- 
+
 ## Test ########################################################################
 FROM vllm AS test
 
@@ -285,8 +285,6 @@ WORKDIR /workspace
 # Create release python environment, this should have vllm too
 COPY --from=vllm --link /opt/vllm /opt/vllm
 ENV PATH=/opt/vllm/bin/:$PATH
-
-COPY --from=gen-protos --link /workspace/vllm/entrypoints/grpc/pb vllm/entrypoints/grpc/pb
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=bind,source=requirements-common.txt,target=requirements-common.txt \
