@@ -192,6 +192,8 @@ RUN python3 setup.py build_ext --inplace
 
 # Copy the entire directory before building wheel
 COPY vllm vllm
+# Copy over the generated *.pb2 files
+COPY --from=gen-protos --link /workspace/vllm/entrypoints/grpc/pb vllm/entrypoints/grpc/pb
 
 RUN --mount=type=cache,target=/root/.cache/ccache \
     --mount=type=cache,target=/root/.cache/pip \
@@ -203,7 +205,6 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
 # we need to remove it manually
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip cache remove vllm_nccl*
-
 
 ## Extension Cache #############################################################
 # Instead of compiling artifacts every build just copy from pre-built wheel
@@ -285,8 +286,6 @@ WORKDIR /workspace
 # Create release python environment, this should have vllm too
 COPY --from=vllm --link /opt/vllm /opt/vllm
 ENV PATH=/opt/vllm/bin/:$PATH
-
-COPY --from=gen-protos --link /workspace/vllm/entrypoints/grpc/pb vllm/entrypoints/grpc/pb
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=bind,source=requirements-common.txt,target=requirements-common.txt \
