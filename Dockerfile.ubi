@@ -147,6 +147,18 @@ RUN --mount=type=cache,target=/root/.cache/pip \
         -r requirements-cuda.txt \
         -r requirements-dev.txt
 
+## Proto Compilation ###########################################################
+FROM python-base AS gen-protos
+
+RUN microdnf install -y \
+        make \
+        findutils \
+    && microdnf clean all
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=bind,source=Makefile,target=Makefile \
+    --mount=type=bind,source=proto,target=proto \
+    make gen-protos
 
 ## Builder #####################################################################
 FROM dev AS build
@@ -242,19 +254,6 @@ WORKDIR /usr/src/flash-attention-v2
 # Download the wheel or build it if a pre-compiled release doesn't exist
 RUN pip --verbose wheel flash-attn==${FLASH_ATTN_VERSION} \
     --no-build-isolation --no-deps --no-cache-dir
-
-## Proto Compilation ###########################################################
-FROM python-base AS gen-protos
-
-RUN microdnf install -y \
-        make \
-        findutils \
-    && microdnf clean all
-
-RUN --mount=type=cache,target=/root/.cache/pip \
-    --mount=type=bind,source=Makefile,target=Makefile \
-    --mount=type=bind,source=proto,target=proto \
-    make gen-protos
 
 ## vLLM installation IMAGE ##########################################################
 # image with vLLM installed
