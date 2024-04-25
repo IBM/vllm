@@ -157,9 +157,10 @@ def get_quant_config(model_config: ModelConfig,
 def download_weights_from_hf(model_name_or_path: str,
                              cache_dir: Optional[str],
                              allow_patterns: List[str],
+                             local_files_only: bool = False,
                              revision: Optional[str] = None) -> str:
     """Download model weights from Hugging Face Hub.
-    
+
     Args:
         model_name_or_path (str): The model name or path.
         cache_dir (Optional[str]): The cache directory to store the model
@@ -167,21 +168,25 @@ def download_weights_from_hf(model_name_or_path: str,
         allow_patterns (List[str]): The allowed patterns for the
             weight files. Files matched by any of the patterns will be
             downloaded.
+        local_files_only (`bool`, *optional*, defaults to `False`):
+            If `True`, avoid downloading the file and return the path to the
+            local cached file if it exists.
         revision (Optional[str]): The revision of the model.
 
     Returns:
         str: The path to the downloaded model weights.
     """
-    # Before we download we look at that is available:
-    fs = HfFileSystem()
-    file_list = fs.ls(model_name_or_path, detail=False, revision=revision)
+    if not local_files_only:
+        # Before we download we look at that is available:
+        fs = HfFileSystem()
+        file_list = fs.ls(model_name_or_path, detail=False, revision=revision)
 
-    # depending on what is available we download different things
-    for pattern in allow_patterns:
-        matching = fnmatch.filter(file_list, pattern)
-        if len(matching) > 0:
-            allow_patterns = [pattern]
-            break
+        # depending on what is available we download different things
+        for pattern in allow_patterns:
+            matching = fnmatch.filter(file_list, pattern)
+            if len(matching) > 0:
+                allow_patterns = [pattern]
+                break
 
     logger.info(f"Using model weights format {allow_patterns}")
     # Use file lock to prevent multiple processes from
@@ -191,6 +196,7 @@ def download_weights_from_hf(model_name_or_path: str,
                                       allow_patterns=allow_patterns,
                                       cache_dir=cache_dir,
                                       tqdm_class=DisabledTqdm,
+                                      local_files_only=local_files_only,
                                       revision=revision)
     return hf_folder
 
