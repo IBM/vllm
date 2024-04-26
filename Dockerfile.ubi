@@ -135,7 +135,8 @@ RUN ldconfig /usr/local/cuda-12.2/compat/
 ## Python cuda base #################################################################
 FROM cuda-base as python-cuda-base
 
-COPY --from=python-torch-base --link /opt/vllm /opt/vllm
+# COPY --from=python-torch-base --link /opt/vllm /opt/vllm
+COPY --from=python-install --link /opt/vllm /opt/vllm
 ENV PATH=/opt/vllm/bin/:$PATH
 
 # install cuda and common dependencies
