@@ -42,25 +42,6 @@ RUN curl -fsSL -o ~/miniforge3.sh -O  "https://github.com/conda-forge/miniforge/
 # use of the /opt/vllm env requires:
 # ENV PATH=/opt/vllm/bin/:$PATH
 
-
-## Python Base #################################################################
-FROM base as python-base
-
-COPY --from=python-install --link /opt/vllm /opt/vllm
-
-ENV PATH=/opt/vllm/bin/:$PATH
-
-
-## Python/Torch Base ###########################################################
-FROM python-base as python-torch-base
-
-ARG PYTORCH_INDEX
-ARG PYTORCH_VERSION
-
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip3 install torch==$PYTORCH_VERSION+cu121 --index-url "${PYTORCH_INDEX}/cu121"
-
-
 ## CUDA Base ###################################################################
 FROM base as cuda-base
 
@@ -133,7 +114,7 @@ ENV LIBRARY_PATH="$CUDA_HOME/lib64/stubs"
 RUN ldconfig /usr/local/cuda-12.2/compat/
 
 ## Python cuda base #################################################################
-FROM cuda-base as python-cuda-base
+FROM cuda-devel as python-cuda-base
 
 # COPY --from=python-torch-base --link /opt/vllm /opt/vllm
 COPY --from=python-install --link /opt/vllm /opt/vllm
@@ -147,10 +128,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
         -r requirements-cuda.txt
 
 ## Development #################################################################
-FROM cuda-devel AS dev
-
-COPY --from=python-torch-base --link /opt/vllm /opt/vllm
-ENV PATH=/opt/vllm/bin/:$PATH
+FROM python-cuda-base AS dev
 
 # install build and runtime dependencies
 RUN --mount=type=cache,target=/root/.cache/pip \
@@ -162,7 +140,9 @@ RUN --mount=type=cache,target=/root/.cache/pip \
         -r requirements-dev.txt
 
 ## Proto Compilation ###########################################################
-FROM python-base AS gen-protos
+FROM python-install AS gen-protos
+
+ENV PATH=/opt/vllm/bin/:$PATH
 
 RUN microdnf install -y \
         make \
@@ -173,6 +153,24 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=bind,source=Makefile,target=Makefile \
     --mount=type=bind,source=proto,target=proto \
     make gen-protos
+
+## Extension Cache #############################################################
+# Instead of compiling artifacts every build just copy from pre-built wheel
+# This might not work if the PyTorch and CUDA versions don't match!
+FROM base as prebuilt-wheel
+
+RUN microdnf install -y \
+        unzip \
+    && microdnf clean all
+
+ARG PYTHON_VERSION
+# 0.4.1 is built for CUDA 12.1 and PyTorch 2.1.2
+ARG VLLM_WHEEL_VERSION=0.4.1
+
+RUN curl -Lo vllm.whl https://github.com/vllm-project/vllm/releases/download/v${VLLM_WHEEL_VERSION}/vllm-${VLLM_WHEEL_VERSION}-cp${PYTHON_VERSION//.}-cp${PYTHON_VERSION//.}-manylinux1_x86_64.whl \
+    && unzip vllm.whl \
+    && rm vllm.whl
+# compiled extensions located at /workspace/vllm/*.so
 
 ## Builder #####################################################################
 FROM dev AS build
@@ -206,42 +204,34 @@ ENV NVCC_THREADS=$nvcc_threads
 # make sure punica kernels are built (for LoRA)
 ENV VLLM_INSTALL_PUNICA_KERNELS=1
 
+### For building *.so files from scratch, this section can be uncommented
+##################################################
 # Setup path stuff? Ref: https://github.com/vllm-project/vllm/blob/main/.github/workflows/scripts/build.sh#L6-L8
-ENV PATH=/usr/local/cuda/bin:$PATH
-ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+# ENV PATH=/usr/local/cuda/bin:$PATH
+# ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 
-ENV CCACHE_DIR=/root/.cache/ccache
+# ENV CCACHE_DIR=/root/.cache/ccache
 
-# run the build_ext command first to reuse 
-# the *so files
-RUN python3 setup.py build_ext --inplace
+# # run the build_ext command first to reuse 
+# # the *so files
+# RUN python3 setup.py build_ext --inplace
+##################################################
 
 # Copy the entire directory before building wheel
 COPY vllm vllm
+##################################################
+# Comment if building *.so files from scratch
+
+# Copy the prebuilt *.so files
+COPY --from=prebuilt-wheel --link /workspace/vllm/*.so vllm/
+##################################################
+
 # Copy over the generated *.pb2 files
 COPY --from=gen-protos --link /workspace/vllm/entrypoints/grpc/pb vllm/entrypoints/grpc/pb
 
 RUN --mount=type=cache,target=/root/.cache/ccache \
     --mount=type=cache,target=/root/.cache/pip \
     python3 setup.py bdist_wheel --dist-dir=dist
-
-## Extension Cache #############################################################
-# Instead of compiling artifacts every build just copy from pre-built wheel
-# This might not work if the PyTorch and CUDA versions don't match!
-FROM base as prebuilt-wheel
-
-RUN microdnf install -y \
-        unzip \
-    && microdnf clean all
-
-ARG PYTHON_VERSION
-# 0.4.0.post1 is built for CUDA 12.1 and PyTorch 2.1.2
-ARG VLLM_WHEEL_VERSION=0.4.0.post1
-
-RUN curl -Lo vllm.whl https://github.com/vllm-project/vllm/releases/download/v${VLLM_WHEEL_VERSION}/vllm-${VLLM_WHEEL_VERSION}-cp${PYTHON_VERSION//.}-cp${PYTHON_VERSION//.}-manylinux1_x86_64.whl \
-    && unzip vllm.whl \
-    && rm vllm.whl
-# compiled extensions located at /workspace/vllm/*.so
 
 #################### FLASH_ATTENTION Build IMAGE ####################
 FROM dev as flash-attn-builder
@@ -262,11 +252,18 @@ WORKDIR /usr/src/flash-attention-v2
 RUN pip --verbose wheel flash-attn==${FLASH_ATTN_VERSION} \
     --no-build-isolation --no-deps --no-cache-dir
 
-## vLLM installation IMAGE ##########################################################
-# image with vLLM installed
-FROM python-cuda-base AS vllm
+## Release #####################################################################
+# Note from the non-UBI Dockerfile:
+# We used base cuda image because pytorch installs its own cuda libraries.
+# However pynccl depends on cuda libraries so we had to switch to the runtime image
+# In the future it would be nice to get a container with pytorch and cuda without duplicating cuda
+FROM cuda-runtime AS vllm-openai
 
-WORKDIR /vllm-workspace
+WORKDIR /workspace
+
+# Create release python environment
+COPY --from=python-cuda-base --link /opt/vllm /opt/vllm
+ENV PATH=/opt/vllm/bin/:$PATH
 
 # install vllm wheel first, so that torch etc will be installed
 RUN --mount=type=bind,from=build,src=/workspace/dist,target=/vllm-workspace/dist \
@@ -277,21 +274,7 @@ RUN --mount=type=bind,from=build,src=/workspace/dist,target=/vllm-workspace/dist
 RUN --mount=type=bind,from=flash-attn-builder,src=/usr/src/flash-attention-v2,target=/usr/src/flash-attention-v2 \
     pip install /usr/src/flash-attention-v2/*.whl --no-cache-dir
 
-## Release #####################################################################
-# Note from the non-UBI Dockerfile:
-# We used base cuda image because pytorch installs its own cuda libraries.
-# However pynccl depends on cuda libraries so we had to switch to the runtime image
-# In the future it would be nice to get a container with pytorch and cuda without duplicating cuda
-FROM cuda-runtime AS vllm-openai
-
-WORKDIR /workspace
-
-# Create release python environment, this should have vllm too
-COPY --from=vllm --link /opt/vllm /opt/vllm
-ENV PATH=/opt/vllm/bin/:$PATH
-
 RUN --mount=type=cache,target=/root/.cache/pip \
-    --mount=type=bind,source=requirements-common.txt,target=requirements-common.txt \
     pip3 install \
         # additional dependencies for the TGIS gRPC server
         grpcio-tools==1.62.1 \
@@ -299,10 +282,6 @@ RUN --mount=type=cache,target=/root/.cache/pip \
         accelerate==0.28.0 \
         # hf_transfer for faster HF hub downloads
         hf_transfer==0.1.6
-
-# Install flash attention (from pre-built wheel)
-RUN --mount=type=bind,from=flash-attn-builder,src=/usr/src/flash-attention-v2,target=/usr/src/flash-attention-v2 \
-    pip3 install /usr/src/flash-attention-v2/*.whl --no-cache-dir
 
 # Triton needs a CC compiler
 RUN microdnf install -y gcc \
