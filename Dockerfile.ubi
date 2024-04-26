@@ -174,7 +174,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     make gen-protos
 
 ## Builder #####################################################################
-FROM python-cuda-base AS build
+FROM dev AS build
 
 # install build dependencies
 RUN --mount=type=cache,target=/root/.cache/pip \
