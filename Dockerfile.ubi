@@ -132,6 +132,18 @@ ENV LIBRARY_PATH="$CUDA_HOME/lib64/stubs"
 # or future versions of triton.
 RUN ldconfig /usr/local/cuda-12.2/compat/
 
+## Python cuda base #################################################################
+FROM cuda-base as python-cuda-base
+
+COPY --from=python-torch-base --link /opt/vllm /opt/vllm
+ENV PATH=/opt/vllm/bin/:$PATH
+
+# install cuda dependencies
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=bind,source=requirements-cuda.txt,target=requirements-cuda.txt \
+    pip3 install \
+        -r requirements-cuda.txt
+
 ## Development #################################################################
 FROM cuda-devel AS dev
 
@@ -161,7 +173,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     make gen-protos
 
 ## Builder #####################################################################
-FROM dev AS build
+FROM python-cuda-base AS build
 
 # install build dependencies
 RUN --mount=type=cache,target=/root/.cache/pip \
@@ -211,13 +223,6 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
     --mount=type=cache,target=/root/.cache/pip \
     python3 setup.py bdist_wheel --dist-dir=dist
 
-# the `vllm_nccl` package must be installed from source distribution
-# pip is too smart to store a wheel in the cache, and other CI jobs
-# will directly use the wheel from the cache, which is not what we want.
-# we need to remove it manually
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip cache remove vllm_nccl*
-
 ## Extension Cache #############################################################
 # Instead of compiling artifacts every build just copy from pre-built wheel
 # This might not work if the PyTorch and CUDA versions don't match!
@@ -237,7 +242,7 @@ RUN curl -Lo vllm.whl https://github.com/vllm-project/vllm/releases/download/v${
 # compiled extensions located at /workspace/vllm/*.so
 
 #################### FLASH_ATTENTION Build IMAGE ####################
-FROM dev as flash-attn-builder
+FROM python-cuda-base as flash-attn-builder
 
 RUN microdnf install -y git \
     && microdnf clean all
@@ -257,7 +262,7 @@ RUN pip --verbose wheel flash-attn==${FLASH_ATTN_VERSION} \
 
 ## vLLM installation IMAGE ##########################################################
 # image with vLLM installed
-FROM dev AS vllm
+FROM python-cuda-base AS vllm
 
 WORKDIR /vllm-workspace
 
@@ -265,9 +270,6 @@ WORKDIR /vllm-workspace
 RUN --mount=type=bind,from=build,src=/workspace/dist,target=/vllm-workspace/dist \
     --mount=type=cache,target=/root/.cache/pip \
     pip install dist/*.whl --verbose
-
-## Test ########################################################################
-FROM vllm AS test
 
 # Install flash attention (from pre-built wheel)
 RUN --mount=type=bind,from=flash-attn-builder,src=/usr/src/flash-attention-v2,target=/usr/src/flash-attention-v2 \
@@ -288,10 +290,7 @@ ENV PATH=/opt/vllm/bin/:$PATH
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=bind,source=requirements-common.txt,target=requirements-common.txt \
-    --mount=type=bind,source=requirements-cuda.txt,target=requirements-cuda.txt \
     pip3 install \
-        # requirements-cuda installs the requirements-common from within
-        -r requirements-cuda.txt \
         # additional dependencies for the TGIS gRPC server
         grpcio-tools==1.62.1 \
         # additional dependencies for openai api_server
