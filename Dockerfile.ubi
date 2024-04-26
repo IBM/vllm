@@ -243,7 +243,7 @@ RUN curl -Lo vllm.whl https://github.com/vllm-project/vllm/releases/download/v${
 # compiled extensions located at /workspace/vllm/*.so
 
 #################### FLASH_ATTENTION Build IMAGE ####################
-FROM python-cuda-base as flash-attn-builder
+FROM dev as flash-attn-builder
 
 RUN microdnf install -y git \
     && microdnf clean all
