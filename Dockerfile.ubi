@@ -209,7 +209,6 @@ ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 
 ### For building *.so files from scratch, this section can be uncommented
 ##################################################
-# ENV CCACHE_DIR=/root/.cache/ccache
 # RUN python3 setup.py build_ext --inplace
 ##################################################
 
@@ -225,6 +224,7 @@ COPY --from=prebuilt-wheel --link /workspace/vllm/*.so vllm/
 # Copy over the generated *.pb2 files
 COPY --from=gen-protos --link /workspace/vllm/entrypoints/grpc/pb vllm/entrypoints/grpc/pb
 
+ENV CCACHE_DIR=/root/.cache/ccache
 RUN --mount=type=cache,target=/root/.cache/ccache \
     --mount=type=cache,target=/root/.cache/pip \
     python3 setup.py bdist_wheel --dist-dir=dist
@@ -262,7 +262,7 @@ COPY --from=python-cuda-base --link /opt/vllm /opt/vllm
 ENV PATH=/opt/vllm/bin/:$PATH
 
 # install vllm wheel first, so that torch etc will be installed
-RUN --mount=type=bind,from=build,src=/workspace/dist,target=/vllm-workspace/dist \
+RUN --mount=type=bind,from=build,src=/workspace/dist,target=/workspace/dist \
     --mount=type=cache,target=/root/.cache/pip \
     pip install dist/*.whl --verbose
 
