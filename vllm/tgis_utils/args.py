@@ -76,7 +76,14 @@ def add_tgis_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
                         default=True)  #TODO TBD
     parser.add_argument('--grpc-port', type=int, default=8033)
 
-    #TODO check/add other args here including TLS related
+    # map to ssl_certfile
+    parser.add_argument('--tls-cert-path', type=str)
+    # map to ssl_keyfile
+    parser.add_argument('--tls-key-path', type=str)
+    # map to ssl_ca_certs
+    parser.add_argument('--tls-client-ca-cert-path', type=str)
+
+    # TODO check/add other args here
 
     # revision, dtype, trust-remote-code already covered by llmengine args
     return parser
@@ -118,5 +125,20 @@ def postprocess_tgis_args(args: argparse.Namespace) -> argparse.Namespace:
     # response
     if not args.disable_log_requests:
         args.disable_log_requests = True
+
+    if args.max_batch_size is not None:
+        # Existing MAX_BATCH_SIZE settings in TGIS configs may not necessarily
+        # be best for vLLM so we'll just log a warning for now
+        logger.warn(
+            f"max_batch_size is set to {args.max_batch_size} but will be "
+            f"ignored for now. max_num_seqs can be used if this is still "
+            f"needed.")
+
+    if args.tls_cert_path:
+        args.ssl_certfile = args.tls_cert_path
+    if args.tls_key_path:
+        args.ssl_keyfile = args.tls_key_path
+    if args.tls_client_ca_cert_path:
+        args.ssl_ca_certs = args.tls_client_ca_cert_path
 
     return args
