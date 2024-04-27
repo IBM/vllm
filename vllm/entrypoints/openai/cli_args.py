@@ -9,7 +9,7 @@ import json
 import ssl
 
 from vllm.engine.arg_utils import AsyncEngineArgs
-from vllm.entrypoints.openai.serving_engine import LoRA
+from vllm.entrypoints.openai.serving_engine import LoRAModulePath
 from vllm.tgis_utils.args import EnvVarArgumentParser
 
 
@@ -19,7 +19,7 @@ class LoRAParserAction(argparse.Action):
         lora_list = []
         for item in values:
             name, path = item.split('=')
-            lora_list.append(LoRA(name, path))
+            lora_list.append(LoRAModulePath(name, path))
         setattr(namespace, self.dest, lora_list)
 
 
