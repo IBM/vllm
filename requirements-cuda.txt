@@ -2,7 +2,6 @@
 -r requirements-common.txt
 
 # Dependencies for NVIDIA GPUs
-ray >= 2.9
 nvidia-ml-py # for pynvml package
 vllm-nccl-cu12>=2.18,<2.19  # for downloading nccl library
 torch == 2.3.0
