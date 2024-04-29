@@ -205,16 +205,16 @@ ENV VLLM_INSTALL_PUNICA_KERNELS=1
 ENV PATH=/usr/local/cuda/bin:$PATH
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 
+
+
+# Copy the entire directory before building wheel
+COPY --link vllm vllm
+
 # Comment if building *.so files from scratch
 ##################################################
 # Copy the prebuilt *.so files
 COPY --from=prebuilt-wheel --link /workspace/vllm/*.so /workspace/vllm/*.so
 ##################################################
-
-RUN python3 setup.py build_ext --inplace
-
-# Copy the entire directory before building wheel
-COPY --link vllm vllm
 
 # Copy over the generated *.pb2 files
 COPY --from=gen-protos --link /workspace/vllm/entrypoints/grpc/pb vllm/entrypoints/grpc/pb
@@ -222,7 +222,7 @@ COPY --from=gen-protos --link /workspace/vllm/entrypoints/grpc/pb vllm/entrypoin
 ENV CCACHE_DIR=/root/.cache/ccache
 RUN --mount=type=cache,target=/root/.cache/ccache \
     --mount=type=cache,target=/root/.cache/pip \
-    python3 setup.py bdist_wheel --dist-dir=dist
+    VLLM_USE_PRECOMPILED=1 python3 setup.py bdist_wheel --dist-dir=dist
 
 #################### FLASH_ATTENTION Build IMAGE ####################
 FROM dev as flash-attn-builder
