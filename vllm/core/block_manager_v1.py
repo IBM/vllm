@@ -54,7 +54,7 @@ class BlockAllocatorBase(ABC):
 
 
 class CachedBlockAllocator(BlockAllocatorBase):
-    """Manages free physical token blocks for a device. Test
+    """Manages free physical token blocks for a device.
 
     The allocator maintains a list of free blocks and allocates a block when
     requested. When a block is freed, its reference count is decremented. If
