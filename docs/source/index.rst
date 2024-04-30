@@ -103,6 +103,7 @@ Documentation
    dev/engine/engine_index
    dev/kernel/paged_attention
    dev/dockerfile-ubi/dockerfile-ubi
+   dev/dockerfile/dockerfile
 
 Indices and tables
 ==================
