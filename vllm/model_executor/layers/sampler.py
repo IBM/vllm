@@ -545,6 +545,7 @@ def _get_ranks(x: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
     result = result.sum(1).add_(1)
     return result
 
+
 def _get_logprobs(
     logprobs: torch.Tensor,
     sampling_metadata: SamplingMetadata,
