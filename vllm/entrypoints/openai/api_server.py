@@ -2,7 +2,6 @@ import argparse
 import asyncio
 import importlib
 import inspect
-import os
 import re
 from contextlib import asynccontextmanager
 from http import HTTPStatus
@@ -17,6 +16,7 @@ from prometheus_client import make_asgi_app
 from starlette.routing import Mount
 
 import vllm
+import vllm.envs as envs
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
 from vllm.entrypoints.grpc.grpc_server import start_grpc_server
@@ -143,7 +143,7 @@ if __name__ == "__main__":
         allow_headers=args.allowed_headers,
     )
 
-    if token := os.environ.get("VLLM_API_KEY") or args.api_key:
+    if token := envs.VLLM_API_KEY or args.api_key:
 
         @app.middleware("http")
         async def authentication(request: Request, call_next):
