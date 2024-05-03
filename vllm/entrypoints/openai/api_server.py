@@ -5,6 +5,7 @@ import inspect
 import re
 from contextlib import asynccontextmanager
 from http import HTTPStatus
+from typing import Any, Set
 
 import fastapi
 import uvicorn
@@ -37,6 +38,8 @@ openai_serving_completion: OpenAIServingCompletion
 async_llm_engine: AsyncLLMEngine
 logger = init_logger(__name__)
 
+_running_tasks: Set[asyncio.Task[Any]] = set()
+
 
 @asynccontextmanager
 async def lifespan(app: fastapi.FastAPI):
@@ -47,7 +50,9 @@ async def lifespan(app: fastapi.FastAPI):
             await engine.do_log_stats()
 
     if not engine_args.disable_log_stats:
-        asyncio.create_task(_force_log())
+        task = asyncio.create_task(_force_log())
+        _running_tasks.add(task)
+        task.add_done_callback(_running_tasks.remove)
 
     grpc_server = await start_grpc_server(async_llm_engine, args)
 
