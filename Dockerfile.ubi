@@ -292,5 +292,5 @@ RUN microdnf install -y shadow-utils \
 
 COPY LICENSE /licenses/vllm.md
 
-USER 2001
+USER 2000
 ENTRYPOINT ["python3", "-m", "vllm.entrypoints.openai.api_server"]
