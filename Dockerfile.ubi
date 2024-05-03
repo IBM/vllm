@@ -220,7 +220,7 @@ COPY --from=gen-protos --link /workspace/vllm/entrypoints/grpc/pb vllm/entrypoin
 ENV CCACHE_DIR=/root/.cache/ccache
 RUN --mount=type=cache,target=/root/.cache/ccache \
     --mount=type=cache,target=/root/.cache/pip \
-    VLLM_USE_PRECOMPILED=1 python3 setup.py bdist_wheel --dist-dir=dist
+    python3 setup.py bdist_wheel --dist-dir=dist
 
 #################### FLASH_ATTENTION Build IMAGE ####################
 FROM dev as flash-attn-builder
@@ -257,7 +257,7 @@ ENV PATH=/opt/vllm/bin/:$PATH
 # install vllm wheel first, so that torch etc will be installed
 RUN --mount=type=bind,from=build,src=/workspace/dist,target=/workspace/dist \
     --mount=type=cache,target=/root/.cache/pip \
-    VLLM_USE_PRECOMPILED=1 pip install dist/*.whl --verbose
+    pip install dist/*.whl --verbose
 
 # Install flash attention (from pre-built wheel)
 RUN --mount=type=bind,from=flash-attn-builder,src=/usr/src/flash-attention-v2,target=/usr/src/flash-attention-v2 \
