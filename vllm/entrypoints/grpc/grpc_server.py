@@ -54,7 +54,7 @@ async def _handle_exception(e: Exception, func, *args, **kwargs):
     if not isinstance(e, AbortError):
         if type(e).__name__ == "torch.cuda.OutOfMemoryError":  #TODO check
             context = kwargs.get("context", None) or args[-1]
-            logger.exception(f"{func.__name__} caused GPU OOM error")
+            logger.exception("%s caused GPU OOM error", func.__name__)
             service_metrics.count_request_failure(FailureReasonLabel.OOM)
             await context.abort(StatusCode.RESOURCE_EXHAUSTED, str(e))
         else:
@@ -62,7 +62,7 @@ async def _handle_exception(e: Exception, func, *args, **kwargs):
                 service_metrics.count_request_failure(FailureReasonLabel.GENERATE)
             else:
                 service_metrics.count_request_failure(FailureReasonLabel.UNKNOWN)
-        logger.exception(f"{func.__name__} failed")
+        logger.exception("%s failed", func.__name__)
     raise e
 
 
@@ -295,7 +295,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             text=output.text[text_start_offset:],
             generated_token_count=len(output.token_ids),
             stop_reason=stop_reason,
-            stop_sequence=stop_sequence,
+            stop_sequence=stop_sequence if stop_sequence else '',
         )
 
         if resp_options.generated_tokens:
@@ -413,7 +413,8 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
 
     @staticmethod
     def _convert_reason(output: CompletionOutput, max_is_token_limit: bool,
-                        time_limit_reached: bool) -> Tuple['StopReason', str]:
+                        time_limit_reached: bool
+    ) -> Tuple[StopReason.ValueType, Optional[str]]:
         finish_reason = output.finish_reason
         stop_sequence = None
         if finish_reason is None:
@@ -433,20 +434,20 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                     stop_sequence = stop_str_or_tok
                 else:
                     logger.warning(
-                        f"Unexpected stop_reason type: {type(stop_str_or_tok)}"
+                        "Unexpected stop_reason type: %s", type(stop_str_or_tok)
                     )
         elif finish_reason == "abort":
             stop_reason = StopReason.CANCELLED
         else:
-            logger.warning(f"Unrecognized finish_reason: {finish_reason}")
+            logger.warning("Unrecognized finish_reason: %s", finish_reason)
             stop_reason = StopReason.CANCELLED
 
         return stop_reason, stop_sequence
 
     def _convert_tokens(
         self,
-        token_ids: list[int],
-        logprobs_list: Optional[list[Dict[int, Logprob]]],
+        token_ids: List[int],
+        logprobs_list: Optional[List[Dict[int, Logprob]]],
         include_logprobs: bool,
         include_ranks: bool,
         top_n_tokens: int,
@@ -499,7 +500,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         #                    "max_length": truncate_input_tokens} \
         #     if truncate_input_tokens is not None else {
         #       "truncation": True, "max_length": max_model_len + 1}
-        tokenize_kwargs = {}
+        tokenize_kwargs: Dict[str, Any] = {}
 
         input_ids = await self.tokenizer_group.encode_async(
             prompt, **tokenize_kwargs)
@@ -661,6 +662,6 @@ async def start_grpc_server(engine: AsyncLLMEngine,
         server.add_insecure_port(listen_on)
 
     await server.start()
-    logger.info(f"gRPC Server started at {listen_on}")
+    logger.info("gRPC Server started at %s", listen_on)
 
     return server
