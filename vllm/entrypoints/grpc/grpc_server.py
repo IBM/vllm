@@ -14,7 +14,7 @@ from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 from vllm import (AsyncLLMEngine, CompletionOutput, RequestOutput,
                   SamplingParams)
 from vllm.config import ModelConfig
-from vllm.entrypoints.grpc.pb import generation_pb2_grpc
+from vllm.entrypoints.grpc.pb import generation_pb2_grpc  # type: ignore
 # yapf: disable
 from vllm.entrypoints.grpc.pb.generation_pb2 import (BatchedGenerationRequest,
                                                      BatchedGenerationResponse,
