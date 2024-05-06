@@ -160,8 +160,8 @@ RUN microdnf install -y \
     && microdnf clean all
 
 ARG PYTHON_VERSION
-# 0.4.1 is built for CUDA 12.1 and PyTorch 2.1.2
-ARG VLLM_WHEEL_VERSION=0.4.1
+# 0.4.2 is built for CUDA 12.1 and PyTorch 2.3.0
+ARG VLLM_WHEEL_VERSION=0.4.2
 
 RUN curl -Lo vllm.whl https://github.com/vllm-project/vllm/releases/download/v${VLLM_WHEEL_VERSION}/vllm-${VLLM_WHEEL_VERSION}-cp${PYTHON_VERSION//.}-cp${PYTHON_VERSION//.}-manylinux1_x86_64.whl \
     && unzip vllm.whl \
@@ -217,7 +217,7 @@ COPY --from=gen-protos --link /workspace/vllm/entrypoints/grpc/pb vllm/entrypoin
 ENV CCACHE_DIR=/root/.cache/ccache
 RUN --mount=type=cache,target=/root/.cache/ccache \
     --mount=type=cache,target=/root/.cache/pip \
-    python3 setup.py bdist_wheel --dist-dir=dist
+    VLLM_USE_PRECOMPILED=1 python3 setup.py bdist_wheel --dist-dir=dist
 
 #################### FLASH_ATTENTION Build IMAGE ####################
 FROM dev as flash-attn-builder
