@@ -5,7 +5,7 @@ import inspect
 import re
 from contextlib import asynccontextmanager
 from http import HTTPStatus
-from typing import Any, Set
+from typing import Set
 
 import fastapi
 import uvicorn
@@ -38,7 +38,7 @@ openai_serving_completion: OpenAIServingCompletion
 async_llm_engine: AsyncLLMEngine
 logger = init_logger(__name__)
 
-_running_tasks: Set[asyncio.Task[Any]] = set()
+_running_tasks: Set[asyncio.Task] = set()
 
 
 @asynccontextmanager
