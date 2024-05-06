@@ -4,9 +4,6 @@
 ## Global Args #################################################################
 ARG BASE_UBI_IMAGE_TAG=9.3-1612
 ARG PYTHON_VERSION=3.11
-ARG PYTORCH_INDEX="https://download.pytorch.org/whl"
-# ARG PYTORCH_INDEX="https://download.pytorch.org/whl/nightly"
-ARG PYTORCH_VERSION=2.1.2
 
 # NOTE: This setting only has an effect when not using prebuilt-wheel kernels
 ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 8.9 9.0+PTX"
