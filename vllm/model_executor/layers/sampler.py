@@ -541,9 +541,7 @@ def _get_ranks(x: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
              indices]
     result = (x > vals[:, None])
     del vals
-    torch.cuda.empty_cache()
-    result = result.sum(1).add_(1)
-    return result
+    return result.sum(1).add_(1)
 
 
 def _get_logprobs(
