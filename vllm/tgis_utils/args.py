@@ -129,10 +129,10 @@ def postprocess_tgis_args(args: argparse.Namespace) -> argparse.Namespace:
     if args.max_batch_size is not None:
         # Existing MAX_BATCH_SIZE settings in TGIS configs may not necessarily
         # be best for vLLM so we'll just log a warning for now
-        logger.warn(
-            f"max_batch_size is set to {args.max_batch_size} but will be "
-            f"ignored for now. max_num_seqs can be used if this is still "
-            f"needed.")
+        logger.warning(
+            "max_batch_size is set to %d but will be ignored for now."
+            "max_num_seqs can be used if this is still needed.",
+            args.max_batch_size)
 
     if args.tls_cert_path:
         args.ssl_certfile = args.tls_cert_path

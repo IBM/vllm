@@ -45,11 +45,10 @@ def log_response(inputs: List[str], params: Parameters, prefix_id: str,
         level = logging.WARN
     else:
         level = logging.INFO
-    logger.log(
-        level, f"{span_str}: {kind_log} generated "
-        f"{response.generated_token_count} tokens before "
-        f"{stop_reason_str}, output {output_len} chars: "
-        f"{short_output}")
+    logger.log(level,
+               "%s: %s generated %d tokens before %s, output %d chars: %s",
+               span_str, kind_log, response.generated_token_count,
+               stop_reason_str, output_len, short_output)
 
 
 def _truncate(text: str, len_: int) -> bytes:
