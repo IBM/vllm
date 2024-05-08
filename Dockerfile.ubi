@@ -2,11 +2,8 @@
 # docs/source/dev/dockerfile-ubi/dockerfile-ubi.rst
 
 ## Global Args #################################################################
-ARG BASE_UBI_IMAGE_TAG=9.3-1612
+ARG BASE_UBI_IMAGE_TAG=9.4-949.1714662671
 ARG PYTHON_VERSION=3.11
-ARG PYTORCH_INDEX="https://download.pytorch.org/whl"
-# ARG PYTORCH_INDEX="https://download.pytorch.org/whl/nightly"
-ARG PYTORCH_VERSION=2.1.2
 
 # NOTE: This setting only has an effect when not using prebuilt-wheel kernels
 ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 8.9 9.0+PTX"
@@ -30,7 +27,7 @@ RUN microdnf install -y \
 FROM base as python-install
 
 ARG PYTHON_VERSION
-ARG MINIFORGE_VERSION=23.11.0-0
+ARG MINIFORGE_VERSION=24.3.0-0
 
 RUN curl -fsSL -o ~/miniforge3.sh -O  "https://github.com/conda-forge/miniforge/releases/download/${MINIFORGE_VERSION}/Miniforge3-$(uname)-$(uname -m).sh" && \
     chmod +x ~/miniforge3.sh && \
@@ -163,8 +160,8 @@ RUN microdnf install -y \
     && microdnf clean all
 
 ARG PYTHON_VERSION
-# 0.4.1 is built for CUDA 12.1 and PyTorch 2.1.2
-ARG VLLM_WHEEL_VERSION=0.4.1
+# 0.4.2 is built for CUDA 12.1 and PyTorch 2.3.0
+ARG VLLM_WHEEL_VERSION=0.4.2
 
 RUN curl -Lo vllm.whl https://github.com/vllm-project/vllm/releases/download/v${VLLM_WHEEL_VERSION}/vllm-${VLLM_WHEEL_VERSION}-cp${PYTHON_VERSION//.}-cp${PYTHON_VERSION//.}-manylinux1_x86_64.whl \
     && unzip vllm.whl \
@@ -220,7 +217,7 @@ COPY --from=gen-protos --link /workspace/vllm/entrypoints/grpc/pb vllm/entrypoin
 ENV CCACHE_DIR=/root/.cache/ccache
 RUN --mount=type=cache,target=/root/.cache/ccache \
     --mount=type=cache,target=/root/.cache/pip \
-    python3 setup.py bdist_wheel --dist-dir=dist
+    VLLM_USE_PRECOMPILED=1 python3 setup.py bdist_wheel --dist-dir=dist
 
 #################### FLASH_ATTENTION Build IMAGE ####################
 FROM dev as flash-attn-builder
@@ -232,7 +229,7 @@ RUN microdnf install -y git \
 ARG max_jobs=2
 ENV MAX_JOBS=${max_jobs}
 # flash attention version
-ARG flash_attn_version=v2.5.6
+ARG flash_attn_version=v2.5.8
 ENV FLASH_ATTN_VERSION=${flash_attn_version}
 
 WORKDIR /usr/src/flash-attention-v2
@@ -266,9 +263,9 @@ RUN --mount=type=bind,from=flash-attn-builder,src=/usr/src/flash-attention-v2,ta
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip3 install \
         # additional dependencies for the TGIS gRPC server
-        grpcio-tools==1.62.1 \
+        grpcio-tools==1.63.0 \
         # additional dependencies for openai api_server
-        accelerate==0.28.0 \
+        accelerate==0.30.0 \
         # hf_transfer for faster HF hub downloads
         hf_transfer==0.1.6
 
