@@ -116,21 +116,19 @@ class TGISStatLogger(StatLogger):
         self._vllm_stat_logger.log(stats)
 
         # Then log TGIS specific ones
-        self.tgi_queue_size.set(stats.num_waiting + stats.num_swapped)
-        self.tgi_batch_current_size.set(stats.num_running)
+        self.tgi_queue_size.set(stats.num_waiting_sys + stats.num_swapped_sys)
+        self.tgi_batch_current_size.set(stats.num_running_sys)
 
-        for ttft in stats.time_to_first_tokens:
-            self.tgi_batch_inference_duration.labels({
-                "method": "prefill"
-            }).observe(ttft)
-        for tpot in stats.time_per_output_tokens:
-            self.tgi_batch_inference_duration.labels({
-                "method": "next_token"
-            }).observe(tpot)
+        for ttft in stats.time_to_first_tokens_iter:
+            self.tgi_batch_inference_duration.labels(
+                {"method": "prefill"}
+            ).observe(ttft)
+        for tpot in stats.time_per_output_tokens_iter:
+            self.tgi_batch_inference_duration.labels(
+                {"method": "next_token"}
+            ).observe(tpot)
 
-        # These metrics depend on open PR: https://github.com/vllm-project/vllm/pull/2764
-        if hasattr(stats, "num_prompt_tokens_lst"):
-            for input_len in stats.num_prompt_tokens_lst:
-                self.tgi_request_input_length.observe(input_len)
-            for output_len in stats.num_generation_tokens_lst:
-                self.tgi_request_generated_tokens.observe(output_len)
+        for input_len in stats.num_prompt_tokens_requests:
+            self.tgi_request_input_length.observe(input_len)
+        for output_len in stats.num_generation_tokens_requests:
+            self.tgi_request_generated_tokens.observe(output_len)
