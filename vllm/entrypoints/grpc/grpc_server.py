@@ -118,7 +118,8 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
 
     async def _post_init(self):
         self.config = await self.engine.get_model_config()
-        self.tokenizer_group = await self.engine.get_tokenizer_group()
+         # self.tokenizer_group = await self.engine.get_tokenizer_group()
+        self.tokenizer_group = self.engine.engine.tokenizer
         self.tokenizer = await self.engine.get_tokenizer()
 
         # Swap in the special TGIS stats logger
