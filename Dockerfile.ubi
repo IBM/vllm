@@ -260,6 +260,20 @@ RUN --mount=type=bind,from=build,src=/workspace/dist,target=/workspace/dist \
 RUN --mount=type=bind,from=flash-attn-builder,src=/usr/src/flash-attention-v2,target=/usr/src/flash-attention-v2 \
     pip install /usr/src/flash-attention-v2/*.whl --no-cache-dir
 
+# Install the vllm_nccl package which is a bit quirky
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=bind,source=requirements-common.txt,target=requirements-common.txt \
+    --mount=type=bind,source=requirements-cuda.txt,target=requirements-cuda.txt \
+    # The "install" happens in `setup.py` so it happens when built...
+    # Remove the already installed package and the cached wheel
+    pip uninstall -y vllm-nccl-cu12 \
+    && pip cache remove vllm_nccl* \
+    # install the version depended on by vllm requirements
+    && pip install vllm-nccl-cu12 -r requirements-cuda.txt \
+    # The lib is downloaded to root's home directory... move it
+    && mv ~/.config/vllm/nccl/cu12/libnccl.so.2* /usr/local/lib/libnccl.so.2
+ENV VLLM_NCCL_SO_PATH=/usr/local/lib/libnccl.so.2
+
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip3 install \
         # additional dependencies for the TGIS gRPC server
