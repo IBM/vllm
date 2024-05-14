@@ -71,7 +71,7 @@ class ServiceMetrics:
             engine_output.metrics.time_in_queue)
 
     def count_request_failure(self, reason: FailureReasonLabel):
-        self.tgi_request_failure.labels({"err": reason}).inc(1)
+        self.tgi_request_failure.labels(err=reason).inc(1)
 
 
 class TGISStatLogger(StatLogger):
@@ -120,13 +120,11 @@ class TGISStatLogger(StatLogger):
         self.tgi_batch_current_size.set(stats.num_running_sys)
 
         for ttft in stats.time_to_first_tokens_iter:
-            self.tgi_batch_inference_duration.labels({
-                "method": "prefill"
-            }).observe(ttft)
+            self.tgi_batch_inference_duration.labels(
+                method="prefill").observe(ttft)
         for tpot in stats.time_per_output_tokens_iter:
-            self.tgi_batch_inference_duration.labels({
-                "method": "next_token"
-            }).observe(tpot)
+            self.tgi_batch_inference_duration.labels(
+                method="next_token").observe(tpot)
 
         for input_len in stats.num_prompt_tokens_requests:
             self.tgi_request_input_length.observe(input_len)
