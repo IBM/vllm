@@ -299,7 +299,9 @@ RUN microdnf install -y shadow-utils \
     && useradd --uid 2000 --gid 0 vllm \
     && microdnf remove -y shadow-utils \
     && microdnf clean all \
-    && chmod g+rwx $HOME /usr/src /workspace
+    # Make some dirs writable for debugging
+    && chmod -R g+rwx $HOME /usr/src /workspace /opt/vllm/lib/python3.11/site-packages/vllm \
+        /opt/vllm/lib/python3.11/site-packages/vllm-*
 
 COPY LICENSE /licenses/vllm.md
 
