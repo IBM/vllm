@@ -222,6 +222,11 @@ if __name__ == "__main__":
         engine, model_config, served_model_names, args.lora_modules)
     openai_serving_embedding = OpenAIServingEmbedding(engine, model_config,
                                                       served_model_names)
+
+    # 🌶️🌶️🌶️ Sets the engine for the TGIS gRPC server.
+    # Do not delete on merge conflicts!
+    async_llm_engine = engine
+
     app.root_path = args.root_path
     uvicorn.run(app,
                 host=args.host,
