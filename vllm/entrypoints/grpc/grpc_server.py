@@ -34,6 +34,8 @@ from vllm.entrypoints.openai.serving_completion import merge_async_iterators
 from vllm.logger import init_logger
 from vllm.sequence import Logprob
 from vllm.tgis_utils import logs
+from vllm.tgis_utils.guided_decoding import (
+    get_outlines_guided_decoding_logits_processor)
 from vllm.tgis_utils.logits_processors import (ExpDecayLengthPenaltyWarper,
                                                TypicalLogitsWarperWrapper)
 from vllm.tgis_utils.metrics import (FailureReasonLabel, ServiceMetrics,
@@ -118,7 +120,8 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
 
     async def _post_init(self):
         self.config = await self.engine.get_model_config()
-        self.tokenizer_group = await self.engine.get_tokenizer_group()
+        # self.tokenizer_group = await self.engine.get_tokenizer_group()
+        self.tokenizer_group = self.engine.engine.tokenizer
         self.tokenizer = await self.engine.get_tokenizer()
 
         # Swap in the special TGIS stats logger
@@ -388,6 +391,12 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             logits_processors.append(
                 ExpDecayLengthPenaltyWarper(length_penalty=length_penalty_tuple,
                                             eos_token_id=self.tokenizer.eos_token_id))
+
+        guided_decode_logit_processor = (
+            await get_outlines_guided_decoding_logits_processor(decoding,
+                                                          self.tokenizer))
+        if guided_decode_logit_processor is not None:
+            logits_processors.append(guided_decode_logit_processor)
 
         time_limit_millis = stopping.time_limit_millis
         deadline = time.time(
