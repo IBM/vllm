@@ -52,6 +52,11 @@ async def _handle_exception(e: Exception, func, *args, **kwargs):
     # We don't log AbortErrors since these correspond to gRPC errors
     # intentionally raised during handling of requests.
     if not isinstance(e, AbortError):
+        # try to replicate TGIS logs for when errors occur
+        if "generate" in func.__name__.lower():
+            request = kwargs.get("request", None) or args[-2]
+            logs.log_error(request=request, exception=e, logger=logger)
+
         if type(e).__name__ == "torch.cuda.OutOfMemoryError":  #TODO check
             context = kwargs.get("context", None) or args[-1]
             logger.exception("%s caused GPU OOM error", func.__name__)
@@ -173,14 +178,9 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             response = self._convert_input_details(res, resp_options,
                                                    sampling_params,
                                                    response)
-            if request_count == 1:
-                kind_log = "Request"
-            else:
-                kind_log = f"Sub-request {i} from batch of {request_count}"
-
-            self._log_unary_response(request=request, response=response,
-                                     start_time=start_time, engine_response=res,
-                                     kind_log=kind_log)
+            logs.log_response(request=request, response=response,
+                              start_time=start_time, engine_metrics=res.metrics,
+                              sub_request_num=i, logger=logger)
             responses[i] = response
 
         return BatchedGenerationResponse(responses=responses)
@@ -254,9 +254,11 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             return
         first_response.text = full_output
         first_response.generated_token_count = last_token_count
-        self._log_streaming_response(request=request, response=first_response,
-                                     start_time=start_time,
-                                     engine_response=last_engine_response)
+        logs.log_response(request=request, response=first_response,
+                          start_time=start_time,
+                          engine_metrics=last_engine_response.metrics
+                          if last_engine_response else None,
+                          logger=logger)
 
     def _convert_input_details(
             self, result: RequestOutput, resp_options: ResponseOptions,
@@ -537,30 +539,6 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             max_is_token_limit = True
 
         return input_ids, max_is_token_limit
-
-    @staticmethod
-    def _log_unary_response(request: BatchedGenerationRequest,
-                            response: GenerationResponse,
-                            engine_response: RequestOutput,
-                            start_time: float, kind_log: str):
-        logs.log_response(inputs=[r.text for r in request.requests],
-                          response=response, params=request.params,
-                          prefix_id=request.prefix_id,
-                          engine_response=engine_response,
-                          start_time=start_time, kind_log=kind_log,
-                          method_str="generate", logger=logger)
-
-    @staticmethod
-    def _log_streaming_response(request: SingleGenerationRequest,
-                                response: GenerationResponse,
-                                engine_response: RequestOutput,
-                                start_time: float):
-        logs.log_response(inputs=[request.request.text], response=response,
-                          params=request.params, prefix_id=request.prefix_id,
-                          engine_response=engine_response,
-                          start_time=start_time, kind_log="Streaming response",
-                          method_str="generate_stream", logger=logger)
-
 
     @log_rpc_handler_errors
     async def Tokenize(self, request: BatchedTokenizeRequest,
