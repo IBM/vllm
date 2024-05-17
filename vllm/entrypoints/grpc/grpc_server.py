@@ -49,21 +49,33 @@ def with_default(value: Any, default: Any) -> Any:
 
 
 async def _handle_exception(e: Exception, func, *args, **kwargs):
-    # We don't log AbortErrors since these correspond to gRPC errors
-    # intentionally raised during handling of requests.
-    if not isinstance(e, AbortError):
-        # try to replicate TGIS logs for when errors occur
-        if "generate" in func.__name__.lower():
-            request = kwargs.get("request", None) or args[-2]
-            logs.log_error(request=request, exception=e, logger=logger)
+    context = kwargs.get("context", None) or args[-1]
+    is_generate_fn = "generate" in func.__name__.lower()
 
+    # First just try to replicate the TGIS-style log messages
+    # for generate_* rpcs
+    if is_generate_fn:
+        if isinstance(e, AbortError):
+            # For things that we've already aborted, the relevant error
+            # string is already in the grpc context.
+            error_message = context.details()
+        else:
+            error_message = str(e)
+        request = kwargs.get("request", None) or args[-2]
+        logs.log_error(request=request,
+                       exception_str=error_message,
+                       logger=logger)
+
+    # AbortErrors likely correspond to things we've already explicitly handled,
+    # So we only add special handling for other types of errors
+    if not isinstance(e, AbortError):
         if type(e).__name__ == "torch.cuda.OutOfMemoryError":  #TODO check
             context = kwargs.get("context", None) or args[-1]
             logger.exception("%s caused GPU OOM error", func.__name__)
             service_metrics.count_request_failure(FailureReasonLabel.OOM)
             await context.abort(StatusCode.RESOURCE_EXHAUSTED, str(e))
         else:
-            if "generate" in func.__name__.lower():
+            if is_generate_fn:
                 service_metrics.count_request_failure(FailureReasonLabel.GENERATE)
             else:
                 service_metrics.count_request_failure(FailureReasonLabel.UNKNOWN)
@@ -108,7 +120,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
 
     async def _post_init(self):
         self.config = await self.engine.get_model_config()
-         # self.tokenizer_group = await self.engine.get_tokenizer_group()
+        # self.tokenizer_group = await self.engine.get_tokenizer_group()
         self.tokenizer_group = self.engine.engine.tokenizer
         self.tokenizer = await self.engine.get_tokenizer()
 

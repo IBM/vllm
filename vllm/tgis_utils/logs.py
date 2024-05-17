@@ -51,9 +51,11 @@ def log_response(
 
 
 def log_error(request: Union[BatchedGenerationRequest,
-                             SingleGenerationRequest], exception: Exception,
+                             SingleGenerationRequest], exception_str: str,
               logger: logging.Logger):
     """Logs errors similar to how the TGIS server does"""
+    # NB: We don't actually log the `Exception` here to match the TGIS behavior
+    # of just logging the simple string representation of the error
     params = request.params
     paramstr = text_format.MessageToString(params, as_one_line=True)
     prefix_id = request.prefix_id
@@ -69,11 +71,9 @@ def log_error(request: Union[BatchedGenerationRequest,
     input_chars = sum(len(input_) for input_ in inputs)
 
     span_str = (f"{method_str}{{input={short_input} prefix_id={prefix_id} "
-                f"input_chars=[{input_chars}] params={paramstr} ")
+                f"input_chars=[{input_chars}] params={paramstr}")
 
-    # Using %s to format the exception to only print the exception's message
-    # like TGIS does. (This is intentionally not using exc_info=True)
-    logger.error("%s: %s", span_str, exception)
+    logger.error("%s: %s", span_str, exception_str)
 
 
 def _log_response(inputs: List[str], params: Parameters, prefix_id: str,
