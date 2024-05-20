@@ -70,15 +70,13 @@ async def _handle_exception(e: Exception, func, *args, **kwargs):
     # So we only add special handling for other types of errors
     if not isinstance(e, AbortError):
         if type(e).__name__ == "torch.cuda.OutOfMemoryError":  #TODO check
-            context = kwargs.get("context", None) or args[-1]
             logger.exception("%s caused GPU OOM error", func.__name__)
             service_metrics.count_request_failure(FailureReasonLabel.OOM)
             await context.abort(StatusCode.RESOURCE_EXHAUSTED, str(e))
+        elif is_generate_fn:
+            service_metrics.count_request_failure(FailureReasonLabel.GENERATE)
         else:
-            if is_generate_fn:
-                service_metrics.count_request_failure(FailureReasonLabel.GENERATE)
-            else:
-                service_metrics.count_request_failure(FailureReasonLabel.UNKNOWN)
+            service_metrics.count_request_failure(FailureReasonLabel.UNKNOWN)
         logger.exception("%s failed", func.__name__)
     raise e
 

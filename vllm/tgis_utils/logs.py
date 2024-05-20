@@ -28,26 +28,25 @@ def log_response(
         else:
             kind_log = (f"Sub-request {sub_request_num} from batch of "
                         f"{request_count}")
-        _log_response(inputs=[r.text for r in request.requests],
-                      response=response,
-                      params=request.params,
-                      prefix_id=request.prefix_id,
-                      engine_metrics=engine_metrics,
-                      start_time=start_time,
-                      kind_log=kind_log,
-                      method_str="generate",
-                      logger=logger)
+        inputs = [r.text for r in request.requests]
+        method_str = "generate"
     else:
         # streaming case
-        _log_response(inputs=[request.request.text],
-                      response=response,
-                      params=request.params,
-                      prefix_id=request.prefix_id,
-                      engine_metrics=engine_metrics,
-                      start_time=start_time,
-                      kind_log="Streaming response",
-                      method_str="generate_stream",
-                      logger=logger)
+        inputs = [request.request.text]
+        kind_log = "Streaming response"
+        method_str = "generate_stream"
+
+    _log_response(
+        inputs=inputs,
+        response=response,
+        params=request.params,
+        prefix_id=request.prefix_id,
+        engine_metrics=engine_metrics,
+        start_time=start_time,
+        kind_log=kind_log,
+        method_str=method_str,
+        logger=logger,
+    )
 
 
 def log_error(request: Union[BatchedGenerationRequest,
@@ -56,8 +55,7 @@ def log_error(request: Union[BatchedGenerationRequest,
     """Logs errors similar to how the TGIS server does"""
     # NB: We don't actually log the `Exception` here to match the TGIS behavior
     # of just logging the simple string representation of the error
-    params = request.params
-    paramstr = text_format.MessageToString(params, as_one_line=True)
+    param_str = text_format.MessageToString(request.params, as_one_line=True)
     prefix_id = request.prefix_id
 
     if isinstance(request, BatchedGenerationRequest):
@@ -71,7 +69,7 @@ def log_error(request: Union[BatchedGenerationRequest,
     input_chars = sum(len(input_) for input_ in inputs)
 
     span_str = (f"{method_str}{{input={short_input} prefix_id={prefix_id} "
-                f"input_chars=[{input_chars}] params={paramstr}")
+                f"input_chars=[{input_chars}] params={param_str}")
 
     logger.error("%s: %s", span_str, exception_str)
 
