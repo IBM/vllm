@@ -119,6 +119,7 @@ Documentation
    :caption: Community
 
    community/meetups
+   community/sponsors
 
 Indices and tables
 ==================
