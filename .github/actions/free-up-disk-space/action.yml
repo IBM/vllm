@@ -34,3 +34,14 @@ runs:
         docker system df
         echo "Disk usage after pruning docker images:"
         df -h
+
+    - name: "Increase swap space"
+      shell: bash
+      run: |
+        sudo swapon --show
+        sudo swapoff -a
+        sudo fallocate -l 8G /swapfile
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+        sudo swapon /swapfile
+        sudo swapon --show
