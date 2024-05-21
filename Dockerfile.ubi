@@ -208,7 +208,7 @@ COPY --link vllm vllm
 # Comment if building *.so files from scratch
 ##################################################
 # Copy the prebuilt *.so files
-COPY --from=prebuilt-wheel --link /workspace/vllm/*.so /workspace/vllm/
+# COPY --from=prebuilt-wheel --link /workspace/vllm/*.so /workspace/vllm/
 ##################################################
 
 # Copy over the generated *.pb2 files
