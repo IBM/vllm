@@ -209,6 +209,7 @@ COPY --link vllm vllm
 ##################################################
 # Copy the prebuilt *.so files
 # COPY --from=prebuilt-wheel --link /workspace/vllm/*.so /workspace/vllm/
+# ENV VLLM_USE_PRECOMPILED=1
 ##################################################
 
 # Copy over the generated *.pb2 files
@@ -217,7 +218,7 @@ COPY --from=gen-protos --link /workspace/vllm/entrypoints/grpc/pb vllm/entrypoin
 ENV CCACHE_DIR=/root/.cache/ccache
 RUN --mount=type=cache,target=/root/.cache/ccache \
     --mount=type=cache,target=/root/.cache/pip \
-    VLLM_USE_PRECOMPILED=1 python3 setup.py bdist_wheel --dist-dir=dist
+    python3 setup.py bdist_wheel --dist-dir=dist
 
 ## Release #####################################################################
 # Note from the non-UBI Dockerfile:
