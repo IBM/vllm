@@ -211,6 +211,10 @@ COPY --link vllm vllm
 # COPY --from=prebuilt-wheel --link /workspace/vllm/*.so /workspace/vllm/
 # ENV VLLM_USE_PRECOMPILED=1
 ##################################################
+# Comment if not building .so files from scratch
+RUN microdnf install -y git \
+    && microdnf clean all
+##################################################
 
 # Copy over the generated *.pb2 files
 COPY --from=gen-protos --link /workspace/vllm/entrypoints/grpc/pb vllm/entrypoints/grpc/pb
