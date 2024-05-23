@@ -420,6 +420,7 @@ class SequenceGroup:
             for an embedding model.
         pooling_params: The pooling parameters used to generate the pooling
             for an embedding model.
+        encoder_seq: Optional, the single encoder sequence.
     """
 
     def __init__(
@@ -432,6 +433,7 @@ class SequenceGroup:
         multi_modal_data: Optional[MultiModalData] = None,
         embeddings: Optional[List[float]] = None,
         pooling_params: Optional[PoolingParams] = None,
+        encoder_seq: Optional[Sequence] = None,
     ) -> None:
         self.request_id = request_id
         self.seqs_dict = {seq.seq_id: seq for seq in seqs}
@@ -447,6 +449,7 @@ class SequenceGroup:
         self.multi_modal_data = multi_modal_data
         self.embeddings = embeddings
         self.pooling_params = pooling_params
+        self.encoder_seq = encoder_seq
 
     @property
     def prompt(self) -> str:
@@ -523,6 +526,9 @@ class SequenceGroup:
         return list(self.seqs_dict.values()) if status is None else [
             seq for seq in self.seqs_dict.values() if seq.status == status
         ]
+
+    def get_encoder_seq(self) -> Optional[Sequence]:
+        return self.encoder_seq
 
     def get_unfinished_seqs(self) -> List[Sequence]:
         return [
@@ -607,6 +613,11 @@ class SequenceGroupMetadata:
             used in prefix caching.
         state: Internal state tied to this sequence group.
         multi_modal_data: Multi modal data.
+        encoder_seq_data: Optional, the sequence data
+                          for the single encoder prompt.
+        cross_block_table: Optional, the cross-attention 
+                           block table associated with 
+                           the single encoder prompt.
     """
 
     def __init__(
@@ -623,6 +634,8 @@ class SequenceGroupMetadata:
         computed_block_nums: Optional[List[int]] = None,
         state: Optional[SequenceGroupState] = None,
         multi_modal_data: Optional[MultiModalData] = None,
+        encoder_seq_data: Optional[SequenceData] = None,
+        cross_block_table: Optional[List[int]] = None,
     ) -> None:
         self.request_id = request_id
         self.is_prompt = is_prompt
@@ -634,6 +647,8 @@ class SequenceGroupMetadata:
         self.computed_block_nums = computed_block_nums
         self.multi_modal_data = multi_modal_data
         self.state = SequenceGroupState() if state is None else state
+        self.encoder_seq_data = encoder_seq_data
+        self.cross_block_table = cross_block_table
         self._token_chunk_size = token_chunk_size
         self.do_sample = do_sample
 
