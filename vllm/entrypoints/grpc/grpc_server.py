@@ -1,5 +1,6 @@
 import argparse
 import inspect
+import os
 import time
 import uuid
 from typing import (Any, AsyncIterator, Dict, List, MutableSequence, Optional,
@@ -32,6 +33,7 @@ from vllm.entrypoints.grpc.pb.generation_pb2 import (BatchedGenerationRequest,
 from vllm.entrypoints.grpc.validation import validate_input, validate_params
 from vllm.entrypoints.openai.serving_completion import merge_async_iterators
 from vllm.logger import init_logger
+from vllm.lora.request import LoRARequest
 from vllm.sequence import Logprob
 from vllm.tgis_utils import logs
 from vllm.tgis_utils.logits_processors import (ExpDecayLengthPenaltyWarper,
@@ -116,6 +118,10 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         self.skip_special_tokens = not args.output_special_tokens
         self.default_include_stop_seqs = args.default_include_stop_seqs
 
+        self.lora_cache_path = args.lora_adapter_cache
+        self.lora_unique_ids: Dict[str, int] = {}
+        self.next_lora_id = 1
+
     async def _post_init(self):
         self.config = await self.engine.get_model_config()
          # self.tokenizer_group = await self.engine.get_tokenizer_group()
@@ -145,6 +151,20 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
 
         generators = []
         max_is_token_limit = [False] * request_count
+
+        if request.lora_id:
+            if request.lora_id not in self.lora_unique_ids:
+                self.lora_unique_ids[request.lora_id] = self.next_lora_id
+                self.next_lora_id += 1
+            unique_id = self.lora_unique_ids[request.lora_id]
+            lora_request = LoRARequest(
+                lora_name=request.lora_id,
+                lora_int_id=unique_id,
+                lora_local_path=os.path.join(self.lora_cache_path, request.lora_id)
+            )
+        else:
+            lora_request = None
+
         for i, req in enumerate(request.requests):
             input_ids, max_is_token_limit[i]\
                 = await self._validate_prompt_and_tokenize(
@@ -155,7 +175,8 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                 self.engine.generate(prompt=req.text,
                                      sampling_params=sampling_params,
                                      request_id=f"{request_id}-{i}",
-                                     prompt_token_ids=input_ids),
+                                     prompt_token_ids=input_ids,
+                                     lora_request=lora_request),
             )
 
         # TODO handle cancellation

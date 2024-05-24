@@ -29,6 +29,7 @@ message BatchedGenerationRequest {
   string model_id = 1;
   optional string prefix_id = 2;
   repeated GenerationRequest requests = 3;
+  optional string lora_id = 4;
 
   Parameters params = 10;
 }
@@ -37,6 +38,7 @@ message SingleGenerationRequest {
   string model_id = 1;
   optional string prefix_id = 2;
   GenerationRequest request = 3;
+  optional string lora_id = 4;
 
   Parameters params = 10;
 }
