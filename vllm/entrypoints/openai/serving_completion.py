@@ -88,23 +88,25 @@ class OpenAIServingCompletion(OpenAIServing):
         # Schedule the request and get the result generator.
         generators: List[AsyncIterator[RequestOutput]] = []
         try:
-            sampling_params = request.to_sampling_params()
             lora_request = self._maybe_get_lora(request)
             decoding_config = await self.engine.get_decoding_config()
             guided_decoding_backend = request.guided_decoding_backend \
                 or decoding_config.guided_decoding_backend
-            guided_decode_logit_processor = (
-                await get_guided_decoding_logits_processor(
-                    guided_decoding_backend, request, await
-                    self.engine.get_tokenizer()))
-            if guided_decode_logit_processor is not None:
-                if sampling_params.logits_processors is None:
-                    sampling_params.logits_processors = []
-                sampling_params.logits_processors.append(
-                    guided_decode_logit_processor)
             prompt_is_tokens, prompts = parse_prompt_format(request.prompt)
 
             for i, prompt in enumerate(prompts):
+
+                sampling_params = request.to_sampling_params()
+                guided_decode_logit_processor = (
+                    await get_guided_decoding_logits_processor(
+                        guided_decoding_backend, request, await
+                        self.engine.get_tokenizer()))
+                if guided_decode_logit_processor is not None:
+                    if sampling_params.logits_processors is None:
+                        sampling_params.logits_processors = []
+                    sampling_params.logits_processors.append(
+                        guided_decode_logit_processor)
+
                 if prompt_is_tokens:
                     prompt_formats = self._validate_prompt_and_tokenize(
                         request,
