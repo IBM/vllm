@@ -289,7 +289,5 @@ RUN microdnf install -y shadow-utils \
 
 COPY LICENSE /licenses/vllm.md
 
-RUN microdnf install -y nano diffutils patch
-
 USER 2000
 ENTRYPOINT ["python3", "-m", "vllm.entrypoints.openai.api_server"]
