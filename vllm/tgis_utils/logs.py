@@ -41,6 +41,7 @@ def log_response(
         response=response,
         params=request.params,
         prefix_id=request.prefix_id,
+        lora_id=request.lora_id,
         engine_metrics=engine_metrics,
         start_time=start_time,
         kind_log=kind_log,
@@ -57,6 +58,7 @@ def log_error(request: Union[BatchedGenerationRequest,
     # of just logging the simple string representation of the error
     param_str = text_format.MessageToString(request.params, as_one_line=True)
     prefix_id = request.prefix_id
+    lora_id = request.lora_id
 
     if isinstance(request, BatchedGenerationRequest):
         method_str = "generate"
@@ -69,13 +71,14 @@ def log_error(request: Union[BatchedGenerationRequest,
     input_chars = sum(len(input_) for input_ in inputs)
 
     span_str = (f"{method_str}{{input={short_input} prefix_id={prefix_id} "
-                f"input_chars=[{input_chars}] params={param_str}")
+                f"lora_id={lora_id} input_chars=[{input_chars}] "
+                f"params={param_str}")
 
     logger.error("%s: %s", span_str, exception_str)
 
 
 def _log_response(inputs: List[str], params: Parameters, prefix_id: str,
-                  response: GenerationResponse,
+                  lora_id: str, response: GenerationResponse,
                   engine_metrics: Optional[RequestMetrics], start_time: float,
                   kind_log: str, method_str: str, logger: logging.Logger):
     """Logs responses similar to how the TGIS server does"""
@@ -99,6 +102,7 @@ def _log_response(inputs: List[str], params: Parameters, prefix_id: str,
 
     paramstr = text_format.MessageToString(params, as_one_line=True)
     span_str = (f"{method_str}{{input={short_input} prefix_id={prefix_id} "
+                f"lora_id={lora_id} "
                 f"input_chars=[{input_chars}] params={paramstr} "
                 f"tokenization_time={tokenization_time * 1e3:.2f}ms "
                 f"queue_time={queue_time * 1e3:.2f}ms "
