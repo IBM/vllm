@@ -52,12 +52,14 @@ async def get_lm_format_enforcer_guided_decoding_logits_processor(
 
     logits_processor = build_vllm_logits_processor(tokenizer_data,
                                                    character_level_parser)
-    
+
     sig = inspect.signature(logits_processor)
 
     if len(sig.parameters) == 2:
+
         def wrapper(arg1, arg2, arg3):
             return logits_processor(arg2, arg3)
+
         return wrapper
 
     return logits_processor

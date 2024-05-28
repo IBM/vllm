@@ -103,7 +103,8 @@ def _apply_logits_processors(
                 logits_row = logits[logits_row_idx]
                 token_ids = seq_group.seq_data[seq_id].output_token_ids
                 for logits_processor in logits_processors:
-                    logits_row = logits_processor(seq_id, token_ids, logits_row)
+                    logits_row = logits_processor(seq_id, token_ids,
+                                                  logits_row)
                 logits[logits_row_idx] = logits_row
 
         logits_processed += len(seq_group.sample_indices) + len(

@@ -199,8 +199,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
         if self.logit_bias:
 
             def logit_bias_logits_processor(
-                    seq_id: int,
-                    token_ids: List[int],
+                    seq_id: int, token_ids: List[int],
                     logits: torch.Tensor) -> torch.Tensor:
                 assert self.logit_bias is not None
                 for token_id, bias in self.logit_bias.items():
@@ -345,8 +344,7 @@ class CompletionRequest(OpenAIBaseModel):
         if self.logit_bias:
 
             def logit_bias_logits_processor(
-                    seq_id: int,
-                    token_ids: List[int],
+                    seq_id: int, token_ids: List[int],
                     logits: torch.Tensor) -> torch.Tensor:
                 assert self.logit_bias is not None
                 for token_id, bias in self.logit_bias.items():

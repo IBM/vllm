@@ -128,7 +128,7 @@ class CFGLogitsProcessor():
         """
         tokenizer = _adapt_tokenizer(tokenizer)
         self.proto_fsm = CFGFSM(cfg, tokenizer)
-        self.seq_processors = Dict[int, BaseLogitsProcessor]
+        self.seq_processors: Dict[int, BaseLogitsProcessor] = {}
 
     def init_state(self):
         """Initialize state with a CFGFSM copy."""
@@ -143,7 +143,8 @@ class CFGLogitsProcessor():
             proc.fsm = self.proto_fsm.copy()
             self.seq_processors[seq_id_in_batch] = proc
 
-        return self.seq_processors[seq_id_in_batch](seq_id_in_batch, input_ids, scores)
+        return self.seq_processors[seq_id_in_batch](seq_id_in_batch, input_ids,
+                                                    scores)
 
 
 @lru_cache
