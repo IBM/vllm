@@ -1,6 +1,5 @@
 import argparse
 import inspect
-import os
 import time
 import uuid
 from typing import (Any, AsyncIterator, Dict, List, MutableSequence, Optional,
@@ -15,6 +14,7 @@ from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 from vllm import (AsyncLLMEngine, CompletionOutput, RequestOutput,
                   SamplingParams)
 from vllm.config import ModelConfig
+from vllm.entrypoints.grpc.adapters import AdapterStore, validate_adapters
 from vllm.entrypoints.grpc.pb import generation_pb2_grpc  # type: ignore
 # yapf: disable
 from vllm.entrypoints.grpc.pb.generation_pb2 import (BatchedGenerationRequest,
@@ -118,13 +118,16 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         self.skip_special_tokens = not args.output_special_tokens
         self.default_include_stop_seqs = args.default_include_stop_seqs
 
-        self.lora_cache_path = args.lora_adapter_cache
-        self.lora_unique_ids: Dict[str, int] = {}
-        self.next_lora_id = 1
+        self.lora_adapter_store: Optional[AdapterStore] = None
+        if args.lora_adapter_cache:
+            self.lora_adapter_store = AdapterStore(
+                cache_path=args.lora_adapter_cache,
+                unique_id_map={}
+            )
 
     async def _post_init(self):
         self.config = await self.engine.get_model_config()
-         # self.tokenizer_group = await self.engine.get_tokenizer_group()
+        # self.tokenizer_group = await self.engine.get_tokenizer_group()
         self.tokenizer_group = self.engine.engine.tokenizer
         self.tokenizer = await self.engine.get_tokenizer()
 
@@ -152,18 +155,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         generators = []
         max_is_token_limit = [False] * request_count
 
-        if request.lora_id:
-            if request.lora_id not in self.lora_unique_ids:
-                self.lora_unique_ids[request.lora_id] = self.next_lora_id
-                self.next_lora_id += 1
-            unique_id = self.lora_unique_ids[request.lora_id]
-            lora_request = LoRARequest(
-                lora_name=request.lora_id,
-                lora_int_id=unique_id,
-                lora_local_path=os.path.join(self.lora_cache_path, request.lora_id)
-            )
-        else:
-            lora_request = None
+        lora_request, _ = await self._validate_adapters(request, context)
 
         for i, req in enumerate(request.requests):
             input_ids, max_is_token_limit[i]\
@@ -232,6 +224,8 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             sampling_params, truncate_input_tokens, request.request.text,
             context)
 
+        lora_request, _ = await self._validate_adapters(request, context)
+
         result_generator = self.engine.generate(
             # prompt is supplied for observability, the text is not
             # re-tokenized when `prompt_token_ids` is supplied
@@ -239,6 +233,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             sampling_params=sampling_params,
             request_id=request_id,
             prompt_token_ids=input_ids,
+            lora_request=lora_request
         )
 
         resp_options = request.params.response
@@ -444,6 +439,19 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                                 str(vllm_validation_error))
 
         return sampling_params, deadline
+
+    async def _validate_adapters(self,
+                                 request: Union[SingleGenerationRequest,
+                                                BatchedGenerationRequest],
+                                 context: ServicerContext) \
+            -> Tuple[Optional[LoRARequest], None]:
+        try:
+            adapters = validate_adapters(
+                request=request, lora_adapter_store=self.lora_adapter_store)
+        except ValueError as e:
+            service_metrics.count_request_failure(FailureReasonLabel.VALIDATION)
+            await context.abort(StatusCode.INVALID_ARGUMENT, str(e))
+        return adapters
 
     @staticmethod
     def _convert_reason(output: CompletionOutput, max_is_token_limit: bool,

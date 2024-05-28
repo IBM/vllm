@@ -39,6 +39,8 @@ class TGISValidationError(str, Enum):
 
     # Additions that are _not_ in TGIS
     TopN = "top_n_tokens ({0}) must be <= {1}"
+    LoraAdapterNotFound = "can't retrieve LoRA adapter with id '{0}': {1}"
+    LoraDisabled = "lora_id supplied but no lora adapter store was configured"
 
     def error(self, *args, **kwargs):
         """Raises a ValueError with a nicely formatted string"""
