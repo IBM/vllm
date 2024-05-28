@@ -264,6 +264,14 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 RUN microdnf install -y gcc \
     && microdnf clean all
 
+# patch triton (fix for #720)
+COPY triton_patch/cache_fix.patch .
+RUN microdnf install -y patch \
+    && patch /opt/vllm/lib/python3.11/site-packages/triton/runtime/cache.py cache_fix.patch \
+    && microdnf remove -y patch \
+    && microdnf clean all \
+    && rm cache_fix.patch
+
 ENV HF_HUB_OFFLINE=1 \
     PORT=8000 \
     GRPC_PORT=8033 \
