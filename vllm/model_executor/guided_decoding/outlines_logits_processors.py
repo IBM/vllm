@@ -37,7 +37,7 @@ class BaseLogitsProcessor:
         """Initialize the FSM states."""
         self.fsm_state: DefaultDict[int, int] = defaultdict(int)
 
-    def __call__(self, input_ids: List[int],
+    def __call__(self, seq_id_in_batch: int, input_ids: List[int],
                  scores: torch.Tensor) -> torch.Tensor:
         """Use the FSM to bias the logits before sampling the next token."""
         seq_id = hash(tuple(input_ids))
@@ -113,7 +113,7 @@ class JSONLogitsProcessor(RegexLogitsProcessor):
         super().__init__(regex_string, tokenizer)
 
 
-class CFGLogitsProcessor(BaseLogitsProcessor):
+class CFGLogitsProcessor():
 
     def __init__(self, cfg: str, tokenizer: PreTrainedTokenizerBase):
         """Compile the FSM that drives the context free grammar generation.
@@ -127,13 +127,23 @@ class CFGLogitsProcessor(BaseLogitsProcessor):
 
         """
         tokenizer = _adapt_tokenizer(tokenizer)
-        fsm = CFGFSM(cfg, tokenizer)
-        self.fsm = fsm
+        self.proto_fsm = CFGFSM(cfg, tokenizer)
+        self.seq_processors = Dict[int, BaseLogitsProcessor]
 
     def init_state(self):
         """Initialize state with a CFGFSM copy."""
-        super().init_state()
-        self.fsm = self.fsm.copy()
+        self.seq_processors = {}
+
+    def __call__(self, seq_id_in_batch: int, input_ids: List[int],
+                 scores: torch.Tensor) -> torch.Tensor:
+        """Use the FSM to bias the logits before sampling the next token."""
+
+        if seq_id_in_batch not in self.seq_processors:
+            proc = BaseLogitsProcessor()
+            proc.fsm = self.proto_fsm.copy()
+            self.seq_processors[seq_id_in_batch] = proc
+
+        return self.seq_processors[seq_id_in_batch](seq_id_in_batch, input_ids, scores)
 
 
 @lru_cache
