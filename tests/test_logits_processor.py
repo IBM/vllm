@@ -59,7 +59,7 @@ def test_logits_processors(seed: int, device: str):
     # This sample logits processor gives infinite score to the i-th token,
     # where i is the length of the input sequence.
     # We therefore expect the output token sequence to be [0, 1, 2, ...]
-    def pick_ith(token_ids, logits):
+    def pick_ith(seq_id, token_ids, logits):
         logits[len(token_ids)] = float("inf")
         return logits
 
