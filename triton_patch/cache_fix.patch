@@ -1,0 +1,8 @@
+4c4
+< import random
+---
+> import uuid
+117c117
+<         rnd_id = random.randint(0, 1000000)
+---
+>         rnd_id = str(uuid.uuid4())
