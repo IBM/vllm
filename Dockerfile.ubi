@@ -265,19 +265,15 @@ RUN microdnf install -y gcc \
     && microdnf clean all
 
 # patch triton (fix for #720)
-COPY triton_patch/cache_fix.patch .
-RUN microdnf install -y patch \
-    && patch /opt/vllm/lib/python3.11/site-packages/triton/runtime/cache.py cache_fix.patch \
-    && microdnf remove -y patch \
-    && microdnf clean all \
-    && rm cache_fix.patch
+COPY triton_patch/custom_cache_manager.py /opt/vllm/lib/python3.11/site-packages/triton/runtime/custom_cache_manager.py
 
 ENV HF_HUB_OFFLINE=1 \
     PORT=8000 \
     GRPC_PORT=8033 \
     HOME=/home/vllm \
     VLLM_USAGE_SOURCE=production-docker-image \
-    VLLM_WORKER_MULTIPROC_METHOD=fork
+    VLLM_WORKER_MULTIPROC_METHOD=fork \
+    TRITON_CACHE_MANAGER="triton.runtime.custom_cache_manager:CustomCacheManager"
 
 # setup non-root user for OpenShift
 RUN microdnf install -y shadow-utils \
