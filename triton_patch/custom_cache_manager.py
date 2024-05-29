@@ -1,10 +1,7 @@
 import os
-from triton.runtime.cache import (
-    FileCacheManager,
-    default_dump_dir,
-    default_override_dir,
-    default_cache_dir
-)
+
+from triton.runtime.cache import (FileCacheManager, default_cache_dir,
+                                  default_dump_dir, default_override_dir)
 
 
 class CustomCacheManager(FileCacheManager):
