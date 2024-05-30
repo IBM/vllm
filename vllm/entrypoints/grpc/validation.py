@@ -1,3 +1,4 @@
+import typing
 from enum import Enum
 
 from vllm import SamplingParams
@@ -39,10 +40,11 @@ class TGISValidationError(str, Enum):
 
     # Additions that are _not_ in TGIS
     TopN = "top_n_tokens ({0}) must be <= {1}"
-    LoraAdapterNotFound = "can't retrieve LoRA adapter with id '{0}': {1}"
-    LoraDisabled = "lora_id supplied but no lora adapter store was configured"
+    AdapterNotFound = "can't retrieve adapter with id '{0}': {1}"
+    AdaptersDisabled = "adapter_id supplied but no adapter store was configured"
+    AdapterUnsupported = "adapter type {0} is not currently supported"
 
-    def error(self, *args, **kwargs):
+    def error(self, *args, **kwargs) -> typing.NoReturn:
         """Raises a ValueError with a nicely formatted string"""
         raise ValueError(self.value.format(*args, **kwargs))
 

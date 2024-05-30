@@ -118,11 +118,11 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         self.skip_special_tokens = not args.output_special_tokens
         self.default_include_stop_seqs = args.default_include_stop_seqs
 
-        self.lora_adapter_store: Optional[AdapterStore] = None
-        if args.lora_adapter_cache:
-            self.lora_adapter_store = AdapterStore(
-                cache_path=args.lora_adapter_cache,
-                unique_id_map={}
+        self.adapter_store: Optional[AdapterStore] = None
+        if args.adapter_cache:
+            self.adapter_store = AdapterStore(
+                cache_path=args.adapter_cache,
+                adapters={}
             )
 
     async def _post_init(self):
@@ -155,7 +155,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         generators = []
         max_is_token_limit = [False] * request_count
 
-        lora_request, _ = await self._validate_adapters(request, context)
+        adapter_kwargs = await self._validate_adapters(request, context)
 
         for i, req in enumerate(request.requests):
             input_ids, max_is_token_limit[i]\
@@ -168,7 +168,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                                      sampling_params=sampling_params,
                                      request_id=f"{request_id}-{i}",
                                      prompt_token_ids=input_ids,
-                                     lora_request=lora_request),
+                                     **adapter_kwargs),
             )
 
         # TODO handle cancellation
@@ -224,7 +224,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             sampling_params, truncate_input_tokens, request.request.text,
             context)
 
-        lora_request, _ = await self._validate_adapters(request, context)
+        adapter_kwargs, _ = await self._validate_adapters(request, context)
 
         result_generator = self.engine.generate(
             # prompt is supplied for observability, the text is not
@@ -233,7 +233,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             sampling_params=sampling_params,
             request_id=request_id,
             prompt_token_ids=input_ids,
-            lora_request=lora_request
+            **adapter_kwargs
         )
 
         resp_options = request.params.response
@@ -444,10 +444,10 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                                  request: Union[SingleGenerationRequest,
                                                 BatchedGenerationRequest],
                                  context: ServicerContext) \
-            -> Tuple[Optional[LoRARequest], None]:
+            -> Dict[str, LoRARequest]:
         try:
             adapters = validate_adapters(
-                request=request, lora_adapter_store=self.lora_adapter_store)
+                request=request, adapter_store=self.adapter_store)
         except ValueError as e:
             service_metrics.count_request_failure(FailureReasonLabel.VALIDATION)
             await context.abort(StatusCode.INVALID_ARGUMENT, str(e))

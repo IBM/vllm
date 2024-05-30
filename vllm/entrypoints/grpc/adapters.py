@@ -1,8 +1,9 @@
 """Contains code to map api requests for adapters (e.g. peft prefixes, LoRA)
 into valid LLM engine requests"""
 import dataclasses
+import json
 import os
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, Optional, Union
 
 from vllm.entrypoints.grpc.pb.generation_pb2 import (BatchedGenerationRequest,
                                                      SingleGenerationRequest)
@@ -11,54 +12,70 @@ from vllm.lora.request import LoRARequest
 
 
 @dataclasses.dataclass
+class AdapterMetadata:
+    unique_id: int  # Unique integer for vllm to identify the adapter
+    adapter_type: str  # The string name of the peft adapter type, e.g. LORA
+    full_path: str
+
+
+@dataclasses.dataclass
 class AdapterStore:
     cache_path: str  # Path to local store of adapters to load from
-    unique_id_map: Dict[str, int]  # maps adapter names to unique integer IDs
+    adapters: Dict[str, AdapterMetadata]
     next_unique_id: int = 1
 
 
 def validate_adapters(
-    request: Union[SingleGenerationRequest, BatchedGenerationRequest],
-    lora_adapter_store: Optional[AdapterStore]
-) -> Tuple[Optional[LoRARequest], None]:
-    """Takes the adapter names from the request and constructs a valid
+        request: Union[SingleGenerationRequest, BatchedGenerationRequest],
+        adapter_store: Optional[AdapterStore]) -> Dict[str, LoRARequest]:
+    """Takes the adapter name from the request and constructs a valid
         engine request if one is set. Raises if the requested adapter
-        does not exist"""
-    lora_id = request.lora_id
-    if lora_id:
-        if not lora_adapter_store:
-            # using raise/format instead of .error so mypy knows this raises
-            raise ValueError(TGISValidationError.LoraDisabled.value.format())
+        does not exist or adapter type is unsupported
 
-        local_lora_path = os.path.join(lora_adapter_store.cache_path, lora_id)
+        Returns the kwarg dictionary to add to an engine.generate() call.
+        """
+    adapter_id = request.adapter_id
 
-        # Do a bit of up-front validation so that we don't ask the engine
-        # to try to load an invalid adapter
-        if not os.path.exists(local_lora_path):
-            TGISValidationError.LoraAdapterNotFound.error(
-                lora_id, "directory does not exist")
-        if not os.path.exists(
-                os.path.join(local_lora_path, "adapter_config.json")):
-            TGISValidationError.LoraAdapterNotFound.error(
-                lora_id, "invalid adapter: no adapter_config.json found")
+    if adapter_id and not adapter_store:
+        TGISValidationError.AdaptersDisabled.error()
 
-        # We need to track a unique integer for vLLM to identify the lora
-        # adapters
-        if lora_id not in lora_adapter_store.unique_id_map:
-            lora_adapter_store.unique_id_map[
-                lora_id] = lora_adapter_store.next_unique_id
-            lora_adapter_store.next_unique_id += 1
-        unique_id = lora_adapter_store.unique_id_map[lora_id]
-        lora_request = LoRARequest(lora_name=lora_id,
-                                   lora_int_id=unique_id,
-                                   lora_local_path=local_lora_path)
-    else:
-        lora_request = None
+    if not adapter_id or not adapter_store:
+        return {}
 
-    if request.prefix_id:
-        # TODO: hook up PromptAdapterRequest once implemented in the engine
-        raise ValueError("prefix_id not implemented yet")
+    # If not already cached, we need to validate that files exist and
+    # grab the type out of the adapter_config.json file
+    if adapter_id not in adapter_store.adapters:
+        local_adapter_path = os.path.join(adapter_store.cache_path, adapter_id)
 
-    # Second return slot left here for the incoming PromptAdapterRequest
-    # See https://github.com/vllm-project/vllm/pull/4645/files
-    return lora_request, None
+        if not os.path.exists(local_adapter_path):
+            TGISValidationError.AdapterNotFound.error(
+                adapter_id, "directory does not exist")
+
+        adapter_config_path = os.path.join(local_adapter_path,
+                                           "adapter_config.json")
+        if not os.path.exists(adapter_config_path):
+            TGISValidationError.AdapterNotFound.error(
+                adapter_id, "invalid adapter: no adapter_config.json found")
+
+        # NB: blocks event loop
+        with open(adapter_config_path) as adapter_config_file:
+            adapter_config = json.load(adapter_config_file)
+
+        adapter_type = adapter_config.get("peft_type", None)
+
+        # Add to cache
+        adapter_store.adapters[adapter_id] = AdapterMetadata(
+            unique_id=adapter_store.next_unique_id,
+            adapter_type=adapter_type,
+            full_path=local_adapter_path)
+
+    # Build the proper vllm request object
+    adapter_metadata = adapter_store.adapters[adapter_id]
+    if adapter_metadata.adapter_type == "LORA":
+        lora_request = LoRARequest(lora_name=adapter_id,
+                                   lora_int_id=adapter_metadata.unique_id,
+                                   lora_local_path=adapter_metadata.full_path)
+        return {"lora_request": lora_request}
+
+    # All other types unsupported
+    TGISValidationError.AdapterUnsupported.error(adapter_metadata.adapter_type)
