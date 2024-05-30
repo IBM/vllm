@@ -22,7 +22,7 @@ def test_logits_processor_force_generate(
                                       add_special_tokens=False)
     max_tokens = len(vllm_token_ids) * repeat_times
 
-    def pick_vllm(token_ids, logits):
+    def pick_vllm(seq_id, token_ids, logits):
         token_id = vllm_token_ids[len(token_ids) % len(vllm_token_ids)]
         logits[token_id] = torch.finfo(logits.dtype).max
         return logits

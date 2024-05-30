@@ -18,10 +18,11 @@ class SamplingType(IntEnum):
     BEAM = 3
 
 
-LogitsProcessor = Callable[[List[int], torch.Tensor], torch.Tensor]
+LogitsProcessor = Callable[[int, List[int], torch.Tensor], torch.Tensor]
 """LogitsProcessor is a function that takes a list of previously generated
 tokens and a tensor of the logits for the next token, and returns a modified
-tensor of logits to sample from."""
+tensor of logits to sample from. The first parameter is a sequence id
+that can be used to implement stateful processors"""
 
 
 class SamplingParams:

@@ -66,7 +66,7 @@ def test_guided_logits_processors():
         f"Give an example IPv4 address with this regex: {TEST_REGEX}")
     tensor = torch.rand(32000)
     original_tensor = torch.clone(tensor)
-    regex_LP(token_ids, tensor)
+    regex_LP(0, token_ids, tensor)
     assert tensor.shape == original_tensor.shape
     assert not torch.allclose(tensor, original_tensor)
 
@@ -75,7 +75,7 @@ def test_guided_logits_processors():
         f"Give an employee profile that fits this schema: {TEST_SCHEMA}")
     tensor = torch.rand(32000)
     original_tensor = torch.clone(tensor)
-    json_LP(token_ids, tensor)
+    json_LP(0, token_ids, tensor)
     assert tensor.shape == original_tensor.shape
     assert not torch.allclose(tensor, original_tensor)
 
@@ -94,7 +94,7 @@ async def test_guided_logits_processor_black_box(backend: str):
     assert regex_lp is not None
     tensor = torch.rand(32000)
     original_tensor = torch.clone(tensor)
-    tensor = regex_lp(token_ids, tensor)
+    tensor = regex_lp(0, token_ids, tensor)
     assert tensor.shape == original_tensor.shape
     assert not torch.allclose(tensor, original_tensor)
 
@@ -108,6 +108,6 @@ async def test_guided_logits_processor_black_box(backend: str):
     assert json_lp is not None
     tensor = torch.rand(32000)
     original_tensor = torch.clone(tensor)
-    tensor = json_lp(token_ids, tensor)
+    tensor = json_lp(0, token_ids, tensor)
     assert tensor.shape == original_tensor.shape
     assert not torch.allclose(tensor, original_tensor)
