@@ -35,6 +35,7 @@ from vllm.entrypoints.openai.serving_completion import merge_async_iterators
 from vllm.inputs import TextTokensPrompt
 from vllm.logger import init_logger
 from vllm.lora.request import LoRARequest
+from vllm.prompt_adapter.request import PromptAdapterRequest
 from vllm.sequence import Logprob
 from vllm.tgis_utils import logs
 from vllm.tgis_utils.guided_decoding import (
@@ -459,7 +460,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                                  request: Union[SingleGenerationRequest,
                                                 BatchedGenerationRequest],
                                  context: ServicerContext) \
-            -> Dict[str, LoRARequest]:
+            -> Dict[str, Union[LoRARequest, PromptAdapterRequest]]:
         try:
             adapters = await validate_adapters(
                 request=request, adapter_store=self.adapter_store)

@@ -615,6 +615,8 @@ class AsyncLLMEngine:
             sampling_params: The sampling parameters of the request.
             request_id: The unique id of the request.
             lora_request: LoRA request to use for generation, if any.
+            prompt_adapter_request: PromptAdapterRequest to use for generation,
+                if any.
 
         Yields:
             The output `RequestOutput` objects from the LLMEngine
