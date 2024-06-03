@@ -44,7 +44,7 @@ def validate_adapters(
 
     # If not already cached, we need to validate that files exist and
     # grab the type out of the adapter_config.json file
-    if adapter_id not in adapter_store.adapters:
+    if (adapter_metadata := adapter_store.adapters.get(adapter_id)) is None:
         local_adapter_path = os.path.join(adapter_store.cache_path, adapter_id)
 
         if not os.path.exists(local_adapter_path):
@@ -64,13 +64,13 @@ def validate_adapters(
         adapter_type = adapter_config.get("peft_type", None)
 
         # Add to cache
-        adapter_store.adapters[adapter_id] = AdapterMetadata(
+        adapter_metadata = AdapterMetadata(
             unique_id=adapter_store.next_unique_id,
             adapter_type=adapter_type,
             full_path=local_adapter_path)
+        adapter_store.adapters[adapter_id] = adapter_metadata
 
     # Build the proper vllm request object
-    adapter_metadata = adapter_store.adapters[adapter_id]
     if adapter_metadata.adapter_type == "LORA":
         lora_request = LoRARequest(lora_name=adapter_id,
                                    lora_int_id=adapter_metadata.unique_id,

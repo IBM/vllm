@@ -29,8 +29,8 @@ message BatchedGenerationRequest {
   string model_id = 1;
   // Deprecated in favor of adapter_id
   optional string prefix_id = 2;
-  repeated GenerationRequest requests = 3;
   optional string adapter_id = 4;
+  repeated GenerationRequest requests = 3;
 
   Parameters params = 10;
 }
@@ -39,8 +39,8 @@ message SingleGenerationRequest {
   string model_id = 1;
   // Deprecated in favor of adapter_id
   optional string prefix_id = 2;
-  GenerationRequest request = 3;
   optional string adapter_id = 4;
+  GenerationRequest request = 3;
 
   Parameters params = 10;
 }
