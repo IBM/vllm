@@ -35,7 +35,7 @@ from vllm.logger import init_logger
 from vllm.sequence import Logprob
 from vllm.tgis_utils import logs
 from vllm.tgis_utils.guided_decoding import (
-    get_outlines_guided_decoding_logits_processor)
+    get_outlines_guided_decoding_logits_processor_factory)
 from vllm.tgis_utils.logits_processors import (ExpDecayLengthPenaltyWarper,
                                                TypicalLogitsWarperWrapper)
 from vllm.tgis_utils.metrics import (FailureReasonLabel, ServiceMetrics,
@@ -154,10 +154,12 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             generators.append(
                 # prompt is supplied for observability, the text is not
                 # re-tokenized when `prompt_token_ids` is supplied
-                self.engine.generate(prompt=req.text,
+                self.engine.generate({
+                                         "prompt": req.text,
+                                         "prompt_token_ids": input_ids
+                                     },
                                      sampling_params=sampling_params,
-                                     request_id=f"{request_id}-{i}",
-                                     prompt_token_ids=input_ids),
+                                     request_id=f"{request_id}-{i}"),
             )
 
         # TODO handle cancellation
@@ -216,10 +218,12 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         result_generator = self.engine.generate(
             # prompt is supplied for observability, the text is not
             # re-tokenized when `prompt_token_ids` is supplied
-            prompt=request.request.text,
+            {
+                "prompt": request.request.text,
+                "prompt_token_ids": input_ids
+            },
             sampling_params=sampling_params,
             request_id=request_id,
-            prompt_token_ids=input_ids,
         )
 
         resp_options = request.params.response
@@ -392,11 +396,12 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                 ExpDecayLengthPenaltyWarper(length_penalty=length_penalty_tuple,
                                             eos_token_id=self.tokenizer.eos_token_id))
 
-        guided_decode_logit_processor = (
-            await get_outlines_guided_decoding_logits_processor(decoding,
+        guided_decode_logit_processor_factory = (
+            get_outlines_guided_decoding_logits_processor_factory(decoding,
                                                           self.tokenizer))
-        if guided_decode_logit_processor is not None:
-            logits_processors.append(guided_decode_logit_processor)
+
+        if guided_decode_logit_processor_factory is not None:
+            logits_processors.append(guided_decode_logit_processor_factory)
 
         time_limit_millis = stopping.time_limit_millis
         deadline = time.time(

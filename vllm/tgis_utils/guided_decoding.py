@@ -2,7 +2,7 @@ import asyncio
 import concurrent.futures
 from copy import copy
 from re import escape as regex_escape
-from typing import Tuple, Union
+from typing import Optional, Tuple, Union
 
 import vllm.model_executor.guided_decoding.outlines_decoding as outlines_decoding  # noqa: E501
 from vllm.entrypoints.grpc.pb.generation_pb2 import DecodingParameters
@@ -10,6 +10,7 @@ from vllm.model_executor.guided_decoding.outlines_decoding import (
     GuidedDecodingMode, _get_cached_logits_processor)
 from vllm.model_executor.guided_decoding.outlines_logits_processors import (
     JSONLogitsProcessor, RegexLogitsProcessor)
+from vllm.sampling_params import LogitsProcessor, LogitsProcessorFactory
 
 
 async def get_outlines_guided_decoding_logits_processor(
@@ -67,3 +68,40 @@ def _get_guide_and_mode(
         if decoding_params.format == DecodingParameters.JSON:
             return outlines_decoding.JSON_GRAMMAR, GuidedDecodingMode.GRAMMAR
     return None, None
+
+
+class GuidedDecodingLogitsProcessorFactory(LogitsProcessorFactory):
+
+    def __init__(self, decoding_params: DecodingParameters, tokenizer):
+        self.decoding_params = decoding_params
+        self.tokenizer = tokenizer
+
+    def _adapter(self):
+        try:
+            asyncio.get_running_loop()
+            task = asyncio.create_task(
+                get_outlines_guided_decoding_logits_processor(
+                    self.decoding_params, self.tokenizer))
+            yield from task
+            return task.result()
+        except RuntimeError:
+            yield asyncio.run(
+                get_outlines_guided_decoding_logits_processor(
+                    self.decoding_params, self.tokenizer))
+
+    def get_processor(self) -> LogitsProcessor:
+        return next(self._adapter())
+
+    async def get_processor_async(self) -> LogitsProcessor:
+        return await asyncio.create_task(self._adapter())
+
+
+def get_outlines_guided_decoding_logits_processor_factory(
+        decoding_params: DecodingParameters,
+        tokenizer) -> Optional[LogitsProcessorFactory]:
+
+    guide, _ = _get_guide_and_mode(decoding_params)
+    if not guide:
+        return None
+
+    return GuidedDecodingLogitsProcessorFactory(decoding_params, tokenizer)

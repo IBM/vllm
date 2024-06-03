@@ -1,5 +1,6 @@
 """Sampling parameters for text generation."""
 import copy
+from abc import ABC, abstractmethod
 from enum import IntEnum
 from functools import cached_property
 from typing import Any, Callable, Dict, List, Optional, Union
@@ -343,3 +344,13 @@ class SamplingParams:
             "spaces_between_special_tokens="
             f"{self.spaces_between_special_tokens}, "
             f"truncate_prompt_tokens={self.truncate_prompt_tokens})")
+
+
+class LogitsProcessorFactory(ABC):
+
+    @abstractmethod
+    def get_processor(self) -> LogitsProcessor:
+        ...
+
+    async def get_processor_async(self) -> LogitsProcessor:
+        return self.get_processor()

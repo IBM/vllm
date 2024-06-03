@@ -17,7 +17,7 @@ from vllm.logger import init_logger
 from vllm.lora.request import LoRARequest
 from vllm.outputs import EmbeddingRequestOutput, RequestOutput
 from vllm.pooling_params import PoolingParams
-from vllm.sampling_params import SamplingParams
+from vllm.sampling_params import LogitsProcessorFactory, SamplingParams
 from vllm.sequence import ExecuteModelRequest, SamplerOutput
 from vllm.usage.usage_lib import UsageContext
 
@@ -286,13 +286,30 @@ class _AsyncLLMEngine(LLMEngine):
         processed_inputs = await self.process_model_inputs_async(
             request_id=request_id, inputs=inputs, lora_request=lora_request)
 
-        self._add_processed_request(
+        seq_group = self._create_sequence_group(
             request_id=request_id,
             processed_inputs=processed_inputs,
             params=params,
             arrival_time=arrival_time,
             lora_request=lora_request,
         )
+
+        if isinstance(params, SamplingParams):
+
+            for seq in seq_group.get_seqs():
+                logits_processors = []
+
+                for lp in params.logits_processors or []:
+                    if isinstance(lp, LogitsProcessorFactory):
+                        logits_processors.append(await
+                                                 lp.get_processor_async())
+                    else:
+                        logits_processors.append(lp)
+                seq_group.state.logits_processors[
+                    seq.seq_id] = logits_processors
+
+        # Add the sequence group to the scheduler.
+        self.scheduler.add_seq_group(seq_group)
 
     async def check_health_async(self) -> None:
         self.model_executor.check_health()

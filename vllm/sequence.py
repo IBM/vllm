@@ -9,7 +9,7 @@ from vllm.block import LogicalTokenBlock
 from vllm.inputs import LLMInputs
 from vllm.lora.request import LoRARequest
 from vllm.pooling_params import PoolingParams
-from vllm.sampling_params import SamplingParams
+from vllm.sampling_params import LogitsProcessor, SamplingParams
 
 if TYPE_CHECKING:
     import torch
@@ -396,6 +396,11 @@ class SequenceGroupState:
 
     # torch.Generator used in seeded sampling
     generator: Optional = None  # type: ignore
+    logits_processors: Dict[int, List[LogitsProcessor]] = field(
+        default_factory=dict)
+
+    def __init__(self):
+        self.logits_processors = {}
 
 
 class MultiModalData:

@@ -17,15 +17,8 @@ from vllm.model_executor.guided_decoding.outlines_decoding import (
 from vllm.sampling_params import LogitsProcessor
 
 
-async def get_lm_format_enforcer_guided_decoding_logits_processor(
-        request: Union[CompletionRequest, ChatCompletionRequest],
-        tokenizer) -> Optional[LogitsProcessor]:
-    """
-    Given an OpenAI-compatible request, check for guided decoding parameters
-    and get the necessary logits processor for the given guide.
-    We cache logit processors by (guide, tokenizer), and on cache hit
-    we make a shallow copy to reuse the same underlying FSM.
-    """
+def validate_request(request: Union[CompletionRequest, ChatCompletionRequest],
+                     tokenizer):
 
     tokenizer_data = _cached_build_vllm_token_enforcer_tokenizer_data(
         tokenizer)
@@ -39,15 +32,34 @@ async def get_lm_format_enforcer_guided_decoding_logits_processor(
     elif request.guided_regex:
         character_level_parser = RegexParser(request.guided_regex)
     elif request.guided_grammar:
-        # CFG grammar not supported by LMFE, revert to outlines
-        return await get_outlines_guided_decoding_logits_processor(
-            request, tokenizer)
+        return None, None
     elif (request.response_format is not None
           and request.response_format.type == "json_object"):
         character_level_parser = JsonSchemaParser(
             None)  # None means any json object
     else:
-        return None
+        return None, None
+
+    return tokenizer_data, character_level_parser
+
+
+async def get_lm_format_enforcer_guided_decoding_logits_processor(
+        request: Union[CompletionRequest, ChatCompletionRequest],
+        tokenizer) -> Optional[LogitsProcessor]:
+    """
+    Given an OpenAI-compatible request, check for guided decoding parameters
+    and get the necessary logits processor for the given guide.
+    We cache logit processors by (guide, tokenizer), and on cache hit
+    we make a shallow copy to reuse the same underlying FSM.
+    """
+
+    tokenizer_data, character_level_parser = validate_request(
+        request, tokenizer)
+
+    if tokenizer_data is None and request.guided_grammar:
+        # CFG grammar not supported by LMFE, revert to outlines
+        return await get_outlines_guided_decoding_logits_processor(
+            request, tokenizer)
 
     logits_processor = build_vllm_logits_processor(tokenizer_data,
                                                    character_level_parser)

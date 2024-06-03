@@ -6,7 +6,8 @@ import torch
 
 from vllm.model_executor.layers.ops.sample import get_num_triton_sampler_splits
 from vllm.sampling_params import SamplingParams, SamplingType
-from vllm.sequence import SequenceData, SequenceGroupMetadata
+from vllm.sequence import (SequenceData, SequenceGroupMetadata,
+                           SequenceGroupState)
 from vllm.utils import (async_tensor_h2d, is_pin_memory_available,
                         maybe_expand_dim)
 
@@ -26,6 +27,7 @@ class SequenceGroupToSample:
     # Sequence ids for the sequence group in a previous step.
     seq_ids: List[int]
     sampling_params: SamplingParams
+    seq_group_state: SequenceGroupState
     # seq_id -> sequence data.
     seq_data: Dict[int, SequenceData]
     # The length of the sequence (all tokens seen in the past + new token to
@@ -275,6 +277,7 @@ def _prepare_seq_groups(
             SequenceGroupToSample(
                 seq_ids=seq_ids,
                 sampling_params=sampling_params,
+                seq_group_state=seq_group_metadata.state,
                 seq_data=seq_group_metadata.seq_data,
                 seq_len=seq_len,
                 query_len=query_len,

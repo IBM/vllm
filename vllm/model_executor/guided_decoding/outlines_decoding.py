@@ -63,7 +63,7 @@ async def get_outlines_guided_decoding_logits_processor(
     we make a shallow copy to reuse the same underlying FSM.
     """
     global global_thread_pool
-    guide, mode = _get_guide_and_mode(request)
+    guide, mode = validate_request(request)
     if not guide:
         return None
 
@@ -83,8 +83,9 @@ async def get_outlines_guided_decoding_logits_processor(
     return logits_processor
 
 
-def _get_guide_and_mode(
-    request: Union[CompletionRequest, ChatCompletionRequest]
+def validate_request(
+    request: Union[CompletionRequest, ChatCompletionRequest],
+    *args  # dummy args
 ) -> Union[Tuple[str, GuidedDecodingMode], Tuple[None, None]]:
 
     if request.guided_json:
