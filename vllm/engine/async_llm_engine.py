@@ -597,6 +597,7 @@ class AsyncLLMEngine:
         sampling_params: SamplingParams,
         request_id: str,
         lora_request: Optional[LoRARequest] = None,
+        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
     ) -> AsyncIterator[RequestOutput]:
         """Generate outputs for a request.
 
@@ -664,6 +665,7 @@ class AsyncLLMEngine:
                 inputs,
                 sampling_params,
                 lora_request=lora_request,
+                prompt_adapter_request=prompt_adapter_request,
         ):
             yield LLMEngine.validate_output(output, RequestOutput)
 
@@ -748,6 +750,7 @@ class AsyncLLMEngine:
         params: Union[SamplingParams, PoolingParams],
         *,
         lora_request: Optional[LoRARequest] = None,
+        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
     ) -> AsyncIterator[Union[RequestOutput, EmbeddingRequestOutput]]:
         """Common logic to process requests with SamplingParams or
         PoolingParams."""
@@ -759,7 +762,7 @@ class AsyncLLMEngine:
             params,
             arrival_time=arrival_time,
             lora_request=lora_request,
-        )
+            prompt_adapter_request=prompt_adapter_request)
 
         try:
             async for request_output in stream:
