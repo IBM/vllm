@@ -219,22 +219,6 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
     --mount=type=cache,target=/root/.cache/pip \
     VLLM_USE_PRECOMPILED=1 python3 setup.py bdist_wheel --dist-dir=dist
 
-#################### libsodium Build IMAGE ####################
-FROM base as libsodium-builder
-
-RUN microdnf install -y gcc gzip \
-    && microdnf clean all
-
-WORKDIR /usr/src/libsodium
-
-ARG LIBSODIUM_VERSION=1.0.19
-RUN curl -LO https://github.com/jedisct1/libsodium/releases/download/${LIBSODIUM_VERSION}-RELEASE/libsodium-${LIBSODIUM_VERSION}.tar.gz \
-    && tar -xzvf libsodium*.tar.gz \
-    && rm -f libsodium*.tar.gz \
-    && mv libsodium*/* ./
-
-RUN ./configure && make && make check
-
 ## Release #####################################################################
 # Note from the non-UBI Dockerfile:
 # We used base cuda image because pytorch installs its own cuda libraries.
@@ -287,12 +271,6 @@ RUN microdnf install -y patch \
     && microdnf remove -y patch \
     && microdnf clean all \
     && rm cache_fix.patch
-
-# Install libsodium for Tensorizer encryption
-RUN --mount=type=bind,from=libsodium-builder,src=/usr/src/libsodium,target=/usr/src/libsodium \
-    cd /usr/src/libsodium \
-    && make install
-ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
 ENV HF_HUB_OFFLINE=1 \
     PORT=8000 \
