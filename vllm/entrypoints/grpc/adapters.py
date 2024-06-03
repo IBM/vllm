@@ -1,5 +1,7 @@
 """Contains code to map api requests for adapters (e.g. peft prefixes, LoRA)
 into valid LLM engine requests"""
+import asyncio
+import concurrent.futures
 import dataclasses
 import json
 import os
@@ -9,6 +11,8 @@ from vllm.entrypoints.grpc.pb.generation_pb2 import (BatchedGenerationRequest,
                                                      SingleGenerationRequest)
 from vllm.entrypoints.grpc.validation import TGISValidationError
 from vllm.lora.request import LoRARequest
+
+global_thread_pool = None  # used for loading adapter files from disk
 
 
 @dataclasses.dataclass
@@ -25,7 +29,7 @@ class AdapterStore:
     next_unique_id: int = 1
 
 
-def validate_adapters(
+async def validate_adapters(
         request: Union[SingleGenerationRequest, BatchedGenerationRequest],
         adapter_store: Optional[AdapterStore]) -> Dict[str, LoRARequest]:
     """Takes the adapter name from the request and constructs a valid
@@ -34,6 +38,7 @@ def validate_adapters(
 
         Returns the kwarg dictionary to add to an engine.generate() call.
         """
+    global global_thread_pool
     adapter_id = request.adapter_id
 
     if adapter_id and not adapter_store:
@@ -47,21 +52,15 @@ def validate_adapters(
     if (adapter_metadata := adapter_store.adapters.get(adapter_id)) is None:
         local_adapter_path = os.path.join(adapter_store.cache_path, adapter_id)
 
-        if not os.path.exists(local_adapter_path):
-            TGISValidationError.AdapterNotFound.error(
-                adapter_id, "directory does not exist")
+        loop = asyncio.get_running_loop()
+        if global_thread_pool is None:
+            global_thread_pool = concurrent.futures.ThreadPoolExecutor(
+                max_workers=2)
 
-        adapter_config_path = os.path.join(local_adapter_path,
-                                           "adapter_config.json")
-        if not os.path.exists(adapter_config_path):
-            TGISValidationError.AdapterNotFound.error(
-                adapter_id, "invalid adapter: no adapter_config.json found")
-
-        # NB: blocks event loop
-        with open(adapter_config_path) as adapter_config_file:
-            adapter_config = json.load(adapter_config_file)
-
-        adapter_type = adapter_config.get("peft_type", None)
+        adapter_type = await loop.run_in_executor(global_thread_pool,
+                                                  _get_adapter_type_from_file,
+                                                  adapter_id,
+                                                  local_adapter_path)
 
         # Add to cache
         adapter_metadata = AdapterMetadata(
@@ -79,3 +78,23 @@ def validate_adapters(
 
     # All other types unsupported
     TGISValidationError.AdapterUnsupported.error(adapter_metadata.adapter_type)
+
+
+def _get_adapter_type_from_file(adapter_id: str, adapter_path: str) -> str:
+    """This function does all the filesystem access required to deduce the type
+     of the adapter. It's run in a separate thread pool executor so that file
+     access does not block the main event loop."""
+    if not os.path.exists(adapter_path):
+        TGISValidationError.AdapterNotFound.error(adapter_id,
+                                                  "directory does not exist")
+
+    adapter_config_path = os.path.join(adapter_path, "adapter_config.json")
+    if not os.path.exists(adapter_config_path):
+        TGISValidationError.AdapterNotFound.error(
+            adapter_id, "invalid adapter: no adapter_config.json found")
+
+    # NB: blocks event loop
+    with open(adapter_config_path) as adapter_config_file:
+        adapter_config = json.load(adapter_config_file)
+
+    return adapter_config.get("peft_type", None)

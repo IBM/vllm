@@ -224,7 +224,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             sampling_params, truncate_input_tokens, request.request.text,
             context)
 
-        adapter_kwargs, _ = await self._validate_adapters(request, context)
+        adapter_kwargs = await self._validate_adapters(request, context)
 
         result_generator = self.engine.generate(
             # prompt is supplied for observability, the text is not
@@ -446,7 +446,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                                  context: ServicerContext) \
             -> Dict[str, LoRARequest]:
         try:
-            adapters = validate_adapters(
+            adapters = await validate_adapters(
                 request=request, adapter_store=self.adapter_store)
         except ValueError as e:
             service_metrics.count_request_failure(FailureReasonLabel.VALIDATION)
