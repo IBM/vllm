@@ -5,7 +5,7 @@ from enum import Enum
 from functools import lru_cache
 from json import dumps as json_dumps
 from re import escape as regex_escape
-from typing import Tuple, Union
+from typing import Optional, Tuple, Union
 
 from pydantic import BaseModel
 from transformers import PreTrainedTokenizerBase
@@ -14,6 +14,7 @@ from vllm.entrypoints.openai.protocol import (ChatCompletionRequest,
                                               CompletionRequest)
 from vllm.model_executor.guided_decoding.outlines_logits_processors import (
     CFGLogitsProcessor, JSONLogitsProcessor, RegexLogitsProcessor)
+from vllm.sampling_params import LogitsProcessor, LogitsProcessorFactory
 
 
 class GuidedDecodingMode(Enum):
@@ -53,39 +54,61 @@ pair   : UNESCAPED_STRING ":" value
 global_thread_pool = None  # used for generating logits processor fsm
 
 
+class OutlinesDecodingLogitsProcessorFactory(LogitsProcessorFactory):
+
+    def __init__(self, guide: str, tokenizer: PreTrainedTokenizerBase,
+                 mode: GuidedDecodingMode, whitespace_pattern: Union[str,
+                                                                     None]):
+        self.guide = guide
+        self.tokenizer = tokenizer
+        self.mode = mode
+        self.whitespace_pattern = whitespace_pattern
+
+    def _copy(self, logits_processor: LogitsProcessor) -> LogitsProcessor:
+        logits_processor = copy(logits_processor)
+        # reset logits processor's internal state
+        logits_processor.init_state()
+        return logits_processor
+
+    def get_processor(self) -> LogitsProcessor:
+        return self._copy(
+            _get_cached_logits_processor(self.guide, self.tokenizer, self.mode,
+                                         self.whitespace_pattern))
+
+    async def get_processor_async(self) -> LogitsProcessor:
+        global global_thread_pool
+        if global_thread_pool is None:
+            global_thread_pool = concurrent.futures.ThreadPoolExecutor(
+                max_workers=2)
+        loop = asyncio.get_running_loop()
+
+        result = await loop.run_in_executor(global_thread_pool,
+                                            _get_cached_logits_processor,
+                                            self.guide, self.tokenizer,
+                                            self.mode, self.whitespace_pattern)
+        return self._copy(result)
+
+
 async def get_outlines_guided_decoding_logits_processor(
         request: Union[CompletionRequest, ChatCompletionRequest],
-        tokenizer) -> Union[JSONLogitsProcessor, RegexLogitsProcessor, None]:
+        tokenizer) -> Optional[OutlinesDecodingLogitsProcessorFactory]:
     """
     Given an OpenAI-compatible request, check for guided decoding parameters
     and get the necessary logits processor for the given guide.
     We cache logit processors by (guide, tokenizer), and on cache hit
     we make a shallow copy to reuse the same underlying FSM.
     """
-    global global_thread_pool
-    guide, mode = validate_request(request)
+    guide, mode = _get_guide_and_mode(request)
     if not guide:
         return None
-
-    if global_thread_pool is None:
-        global_thread_pool = concurrent.futures.ThreadPoolExecutor(
-            max_workers=2)
-    loop = asyncio.get_running_loop()
-
-    result = await loop.run_in_executor(global_thread_pool,
-                                        _get_cached_logits_processor, guide,
-                                        tokenizer, mode,
-                                        request.guided_whitespace_pattern)
-
-    logits_processor = copy(result)
-    # reset logits processor's internal state
-    logits_processor.init_state()
-    return logits_processor
+    if not mode:  # mypy check
+        return None
+    return OutlinesDecodingLogitsProcessorFactory(
+        guide, tokenizer, mode, request.guided_whitespace_pattern)
 
 
-def validate_request(
-    request: Union[CompletionRequest, ChatCompletionRequest],
-    *args  # dummy args
+def _get_guide_and_mode(
+    request: Union[CompletionRequest, ChatCompletionRequest]
 ) -> Union[Tuple[str, GuidedDecodingMode], Tuple[None, None]]:
 
     if request.guided_json:

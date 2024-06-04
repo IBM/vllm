@@ -27,7 +27,7 @@ from vllm.lora.request import LoRARequest
 from vllm.outputs import (EmbeddingRequestOutput, RequestOutput,
                           RequestOutputFactory)
 from vllm.pooling_params import PoolingParams
-from vllm.sampling_params import LogitsProcessorFactory, SamplingParams
+from vllm.sampling_params import SamplingParams
 from vllm.sequence import (EmbeddingSequenceGroupOutput, ExecuteModelRequest,
                            PoolerOutput, SamplerOutput, Sequence,
                            SequenceGroup, SequenceGroupMetadata,
@@ -555,17 +555,8 @@ class LLMEngine:
         )
 
         if isinstance(params, SamplingParams):
-
             for seq in seq_group.get_seqs():
-                logits_processors = []
-
-                for lp in params.logits_processors or []:
-                    if isinstance(lp, LogitsProcessorFactory):
-                        logits_processors.append(lp.get_processor())
-                    else:
-                        logits_processors.append(lp)
-                seq_group.state.logits_processors[
-                    seq.seq_id] = logits_processors
+                seq.data.logits_processors = params.get_logits_processors()
 
         # Add the sequence group to the scheduler.
         self.scheduler.add_seq_group(seq_group)

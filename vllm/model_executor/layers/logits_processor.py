@@ -96,8 +96,7 @@ def _apply_logits_processors(
         seq_ids = seq_group.seq_ids
 
         for seq_id, logits_row_idx in zip(seq_ids, seq_group.sample_indices):
-            logits_processors = seq_group.seq_group_state.logits_processors.get(
-                seq_id)
+            logits_processors = seq_group.seq_data[seq_id].logits_processors
 
             if logits_processors:
                 found_logits_processors = True

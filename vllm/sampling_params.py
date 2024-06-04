@@ -317,6 +317,26 @@ class SamplingParams:
         }
         return copy.deepcopy(self, memo=logit_processor_refs)
 
+    def get_logits_processors(self):
+        logits_processors = []
+
+        for lp in self.logits_processors or []:
+            if isinstance(lp, LogitsProcessorFactory):
+                logits_processors.append(lp.get_processor())
+            else:
+                logits_processors.append(lp)
+        return logits_processors
+
+    async def get_logits_processors_async(self):
+        logits_processors = []
+
+        for lp in self.logits_processors or []:
+            if isinstance(lp, LogitsProcessorFactory):
+                logits_processors.append(await lp.get_processor_async())
+            else:
+                logits_processors.append(lp)
+        return logits_processors
+
     def __repr__(self) -> str:
         return (
             f"SamplingParams(n={self.n}, "

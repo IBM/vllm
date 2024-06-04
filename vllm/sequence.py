@@ -128,6 +128,7 @@ class SequenceData:
         # The number of tokens that are computed (that run against the model).
         self._num_computed_tokens = 0
         self._stage: SequenceStage = SequenceStage.PREFILL
+        self.logits_processors: List[LogitsProcessor] = []
 
     def append_token_id(self, token_id: int, logprob: float) -> None:
         self.output_token_ids.append(token_id)
@@ -396,11 +397,6 @@ class SequenceGroupState:
 
     # torch.Generator used in seeded sampling
     generator: Optional = None  # type: ignore
-    logits_processors: Dict[int, List[LogitsProcessor]] = field(
-        default_factory=dict)
-
-    def __init__(self):
-        self.logits_processors = {}
 
 
 class MultiModalData:

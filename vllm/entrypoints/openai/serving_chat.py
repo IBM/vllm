@@ -22,7 +22,7 @@ from vllm.entrypoints.openai.serving_engine import (LoRAModulePath,
                                                     OpenAIServing)
 from vllm.logger import init_logger
 from vllm.model_executor.guided_decoding import (
-    get_guided_decoding_logits_processor_factory)
+    get_guided_decoding_logits_processor)
 from vllm.outputs import RequestOutput
 from vllm.sequence import Logprob
 from vllm.utils import random_uuid
@@ -168,15 +168,15 @@ class OpenAIServingChat(OpenAIServing):
             decoding_config = await self.engine.get_decoding_config()
             guided_decoding_backend = request.guided_decoding_backend \
                 or decoding_config.guided_decoding_backend
-            guided_decode_logit_processor_factory = \
-                get_guided_decoding_logits_processor_factory(
+            guided_decode_logits_processor = \
+                await get_guided_decoding_logits_processor(
                     guided_decoding_backend, request, await
                     self.engine.get_tokenizer())
-            if guided_decode_logit_processor_factory:
+            if guided_decode_logits_processor:
                 if sampling_params.logits_processors is None:
                     sampling_params.logits_processors = []
                 sampling_params.logits_processors.append(
-                    guided_decode_logit_processor_factory)
+                    guided_decode_logits_processor)
         except ValueError as e:
             return self.create_error_response(str(e))
 
