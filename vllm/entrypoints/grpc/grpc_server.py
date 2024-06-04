@@ -399,7 +399,6 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         guided_decode_logit_processor = (
             await get_outlines_guided_decoding_logits_processor(decoding,
                                                           self.tokenizer))
-
         if guided_decode_logit_processor is not None:
             logits_processors.append(guided_decode_logit_processor)
 

@@ -168,10 +168,10 @@ class OpenAIServingChat(OpenAIServing):
             decoding_config = await self.engine.get_decoding_config()
             guided_decoding_backend = request.guided_decoding_backend \
                 or decoding_config.guided_decoding_backend
-            guided_decode_logits_processor = \
+            guided_decode_logits_processor = (
                 await get_guided_decoding_logits_processor(
                     guided_decoding_backend, request, await
-                    self.engine.get_tokenizer())
+                    self.engine.get_tokenizer()))
             if guided_decode_logits_processor:
                 if sampling_params.logits_processors is None:
                     sampling_params.logits_processors = []
