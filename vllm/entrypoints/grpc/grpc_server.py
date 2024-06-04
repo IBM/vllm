@@ -578,7 +578,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         """
         # Log the incoming tokenization request for metrics
         service_metrics.observe_tokenization_request(request)
-        
+
         # Initialize an empty list to store individual tokenization responses
         responses: List[TokenizeResponse] = []
 
@@ -598,7 +598,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             if 1 <= request.truncate_input_tokens < token_count:
                 token_count = request.truncate_input_tokens
 
-            # Initialize Tokens fron ids
+            # Initialize Tokens from ids
             tokens = self.tokenizer.convert_ids_to_tokens(token_ids)
             offsets = None  # Initialize offsets to None
 
@@ -609,7 +609,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                     for start, end in batch_encoding.offset_mapping
                     if start is not None and end is not None
                 ]
-                # Truncate offset list if request.truncate_input_tokens  
+                # Truncate offset list if request.truncate_input_tokens
                 offsets=offsets[-token_count:]
 
             # Return a token list (Truncated if request.truncate_input_tokens)

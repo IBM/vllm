@@ -27,7 +27,7 @@ einops # required for MPT
 httpx
 peft
 requests
-ray
+#ray
 sentence-transformers # required for embedding
 
 # Benchmarking
