@@ -13,6 +13,7 @@ from vllm.logger import init_logger
 from vllm.lora.request import LoRARequest
 from vllm.outputs import EmbeddingRequestOutput, RequestOutput
 from vllm.pooling_params import PoolingParams
+from vllm.prompt_adapter.request import PromptAdapterRequest
 from vllm.sampling_params import SamplingParams
 from vllm.usage.usage_lib import UsageContext
 from vllm.utils import Counter, deprecate_kwargs
@@ -242,6 +243,7 @@ class LLM:
         prompt_token_ids: Optional[Union[List[int], List[List[int]]]] = None,
         use_tqdm: bool = True,
         lora_request: Optional[LoRARequest] = None,
+        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
     ) -> List[RequestOutput]:
         """Generates the completions for the input prompts.
 
@@ -291,7 +293,7 @@ class LLM:
             inputs=inputs,
             params=sampling_params,
             lora_request=lora_request,
-        )
+            prompt_adapter_request=prompt_adapter_request)
 
         outputs = self._run_engine(use_tqdm=use_tqdm)
         return LLMEngine.validate_outputs(outputs, RequestOutput)
@@ -384,6 +386,7 @@ class LLM:
         prompt_token_ids: Optional[Union[List[int], List[List[int]]]] = None,
         use_tqdm: bool = True,
         lora_request: Optional[LoRARequest] = None,
+        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
     ) -> List[EmbeddingRequestOutput]:
         """Generates the completions for the input prompts.
 
@@ -432,6 +435,7 @@ class LLM:
             inputs=inputs,
             params=pooling_params,
             lora_request=lora_request,
+            prompt_adapter_request=prompt_adapter_request,
         )
 
         outputs = self._run_engine(use_tqdm=use_tqdm)
@@ -491,6 +495,7 @@ class LLM:
         params: Union[SamplingParams, Sequence[SamplingParams], PoolingParams,
                       Sequence[PoolingParams]],
         lora_request: Optional[LoRARequest],
+        prompt_adapter_request: Optional[PromptAdapterRequest],
     ) -> None:
         if isinstance(inputs, (str, dict)):
             # Convert a single prompt to a list.
@@ -508,19 +513,22 @@ class LLM:
                 request_inputs,
                 params[i] if isinstance(params, Sequence) else params,
                 lora_request=lora_request,
-            )
+                prompt_adapter_request=prompt_adapter_request)
 
     def _add_request(
-        self,
-        inputs: PromptInputs,
-        params: Union[SamplingParams, PoolingParams],
-        lora_request: Optional[LoRARequest] = None,
+            self,
+            inputs: PromptInputs,
+            params: Union[SamplingParams, PoolingParams],
+            lora_request: Optional[LoRARequest] = None,
+            prompt_adapter_request: Optional[PromptAdapterRequest] = None
     ) -> None:
         request_id = str(next(self.request_counter))
-        self.llm_engine.add_request(request_id,
-                                    inputs,
-                                    params,
-                                    lora_request=lora_request)
+        self.llm_engine.add_request(
+            request_id,
+            inputs,
+            params,
+            lora_request=lora_request,
+            prompt_adapter_request=prompt_adapter_request)
 
     def _run_engine(
             self, *, use_tqdm: bool

@@ -39,6 +39,7 @@ from vllm.model_executor.layers.vocab_parallel_embedding import (
     VocabParallelEmbedding)
 from vllm.model_executor.model_loader.weight_utils import default_weight_loader
 from vllm.model_executor.sampling_metadata import SamplingMetadata
+from vllm.prompt_adapter.layers import apply_prompt_adapter
 from vllm.sequence import SamplerOutput
 
 
@@ -251,6 +252,7 @@ class BloomModel(nn.Module):
         attn_metadata: AttentionMetadata,
     ) -> torch.Tensor:
         hidden_states = self.word_embeddings(input_ids)
+        hidden_states = apply_prompt_adapter(self, hidden_states, position_ids)
         hidden_states = self.word_embeddings_layernorm(hidden_states)
         for i in range(len(self.h)):
             layer = self.h[i]
