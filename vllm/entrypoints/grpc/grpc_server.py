@@ -559,33 +559,75 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         return input_ids, max_is_token_limit
 
     @log_rpc_handler_errors
-    async def Tokenize(self, request: BatchedTokenizeRequest,
-                       context: ServicerContext) -> BatchedTokenizeResponse:
-        service_metrics.observe_tokenization_request(request)
-        #TODO implement these
-        if request.return_offsets:
-            await context.abort(StatusCode.INVALID_ARGUMENT,
-                                "return_offsets not yet supported")
-        if request.truncate_input_tokens:
-            await context.abort(StatusCode.INVALID_ARGUMENT,
-                                "truncate_input_tokens not yet supported")
+    async def Tokenize(
+        self, request: BatchedTokenizeRequest, context: ServicerContext
+    ) -> BatchedTokenizeResponse:
+        """
+        Handles tokenization requests by tokenizing input texts and
+            returning tokenized results. If request.truncate_input_tokens is
+            provided, the tokenization will contain the truncated results.
 
+        Args:
+            request (BatchedTokenizeRequest): The tokenization request
+                containing texts to be tokenized.
+            context (ServicerContext): The context for the RPC call.
+
+        Returns:
+            BatchedTokenizeResponse: The response containing the
+                tokenized results.
+        """
+        # Log the incoming tokenization request for metrics
+        service_metrics.observe_tokenization_request(request)
+        
+        # Initialize an empty list to store individual tokenization responses
         responses: List[TokenizeResponse] = []
 
-        #TODO maybe parallelize, also move convert_ids_to_tokens
-        # into the other threads
+        # TODO: maybe parallelize, also move convert_ids_to_tokens into the
+        # other threads
         for req in request.requests:
-            token_ids = await self.tokenizer_group.encode_async(req.text)
-            responses.append(
-                TokenizeResponse(
-                    token_count=len(token_ids),
-                    tokens=None if not request.return_tokens else
-                    self.tokenizer.convert_ids_to_tokens(token_ids)))
+            batch_encoding = self.tokenizer.encode_plus(
+                text=req.text,
+                return_offsets_mapping=request.return_offsets
+            ) # Tokenize the input text and get offset_mapping
 
+            # Tokenize the input text async
+            token_ids = batch_encoding.input_ids
+            token_count = len(token_ids)
+
+            # Truncate the token count if truncate_input_tokens
+            if 1 <= request.truncate_input_tokens < token_count:
+                token_count = request.truncate_input_tokens
+
+            # Initialize Tokens fron ids
+            tokens = self.tokenizer.convert_ids_to_tokens(token_ids)
+            offsets = None  # Initialize offsets to None
+
+            # Offset calc. steps
+            if request.return_offsets:
+                offsets = [
+                    {'start': start, 'end': end}
+                    for start, end in batch_encoding.offset_mapping
+                    if start is not None and end is not None
+                ]
+                # Truncate offset list if request.truncate_input_tokens  
+                offsets=offsets[-token_count:]
+
+            # Return a token list (Truncated if request.truncate_input_tokens)
+            tokens = tokens[-token_count:] if request.return_tokens else None
+
+            # Append the response for the current request
+            responses.append(TokenizeResponse(token_count=token_count,
+                                              tokens=tokens,
+                                              offsets=offsets))
+
+        # Create a batched response containing all individual responses
         response = BatchedTokenizeResponse(responses=responses)
-        service_metrics.observe_tokenization_response(response)
-        return response
 
+        # Log the current tokenization response for metrics
+        service_metrics.observe_tokenization_response(response)
+
+        # Return the batched tokenization response
+        return response
     @log_rpc_handler_errors
     async def ModelInfo(self, request: ModelInfoRequest,
                         context: ServicerContext) -> ModelInfoResponse:
@@ -595,7 +637,6 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             max_sequence_length=self.config.max_model_len,
             max_new_tokens=self.max_max_new_tokens,
         )
-
 
 async def start_grpc_server(engine: AsyncLLMEngine,
                             args: argparse.Namespace) -> aio.Server:
