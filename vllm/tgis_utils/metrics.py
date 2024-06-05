@@ -1,7 +1,7 @@
 """Implements the logging for all tgi_* metrics for compatibility
  with TGIS opsviz"""
-from enum import StrEnum, auto
 import time
+from enum import StrEnum, auto
 
 from prometheus_client import Counter, Gauge, Histogram
 
