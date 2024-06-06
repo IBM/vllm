@@ -10,7 +10,7 @@ from vllm.model_executor.guided_decoding.outlines_decoding import (
 from vllm.sampling_params import LogitsProcessorFactory
 
 
-async def get_guided_decoding_logits_processor(
+async def get_guided_decoding_logits_processor_factory(
         guided_decoding_backend: str, request: Union[CompletionRequest,
                                                      ChatCompletionRequest],
         tokenizer) -> Optional[LogitsProcessorFactory]:

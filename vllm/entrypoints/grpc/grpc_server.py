@@ -36,7 +36,7 @@ from vllm.logger import init_logger
 from vllm.sequence import Logprob
 from vllm.tgis_utils import logs
 from vllm.tgis_utils.guided_decoding import (
-    get_outlines_guided_decoding_logits_processor)
+    get_outlines_guided_decoding_logits_processor_factory)
 from vllm.tgis_utils.logits_processors import (ExpDecayLengthPenaltyWarper,
                                                TypicalLogitsWarperWrapper)
 from vllm.tgis_utils.metrics import (FailureReasonLabel, ServiceMetrics,
@@ -401,8 +401,8 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                                             eos_token_id=self.tokenizer.eos_token_id))
 
         guided_decode_logit_processor = (
-            await get_outlines_guided_decoding_logits_processor(decoding,
-                                                          self.tokenizer))
+            await get_outlines_guided_decoding_logits_processor_factory(
+                decoding, self.tokenizer))
         if guided_decode_logit_processor is not None:
             logits_processors.append(guided_decode_logit_processor)
 

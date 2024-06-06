@@ -9,7 +9,7 @@ from vllm.model_executor.guided_decoding.outlines_logits_processors import (
     JSONLogitsProcessor, RegexLogitsProcessor)
 
 
-async def get_outlines_guided_decoding_logits_processor(
+async def get_outlines_guided_decoding_logits_processor_factory(
         decoding_params: DecodingParameters,
         tokenizer) -> Union[JSONLogitsProcessor, RegexLogitsProcessor, None]:
     """
