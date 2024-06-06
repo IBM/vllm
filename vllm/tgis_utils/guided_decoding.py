@@ -1,18 +1,15 @@
-import asyncio
-import concurrent.futures
-from copy import copy
 from re import escape as regex_escape
 from typing import Tuple, Union
 
 import vllm.model_executor.guided_decoding.outlines_decoding as outlines_decoding  # noqa: E501
 from vllm.entrypoints.grpc.pb.generation_pb2 import DecodingParameters
 from vllm.model_executor.guided_decoding.outlines_decoding import (
-    GuidedDecodingMode, _get_cached_logits_processor)
+    GuidedDecodingMode, OutlinesDecodingLogitsProcessorFactory)
 from vllm.model_executor.guided_decoding.outlines_logits_processors import (
     JSONLogitsProcessor, RegexLogitsProcessor)
 
 
-async def get_outlines_guided_decoding_logits_processor(
+async def get_outlines_guided_decoding_logits_processor_factory(
         decoding_params: DecodingParameters,
         tokenizer) -> Union[JSONLogitsProcessor, RegexLogitsProcessor, None]:
     """
@@ -24,25 +21,8 @@ async def get_outlines_guided_decoding_logits_processor(
     guide, mode = _get_guide_and_mode(decoding_params)
     if not guide:
         return None
-
-    if outlines_decoding.global_thread_pool is None:
-        outlines_decoding.global_thread_pool = (
-            concurrent.futures.ThreadPoolExecutor(max_workers=2))
-    loop = asyncio.get_running_loop()
-
-    result = await loop.run_in_executor(
-        outlines_decoding.global_thread_pool,
-        _get_cached_logits_processor,
-        guide,
-        tokenizer,
-        mode,
-        None,  # guided_whitespace_pattern - TBD
-    )
-
-    logits_processor = copy(result)
-    # reset logits processor's internal state
-    logits_processor.init_state()
-    return logits_processor
+    return OutlinesDecodingLogitsProcessorFactory(
+        guide, tokenizer, mode, None)  # guided_whitespace_pattern - TBD
 
 
 def _get_guide_and_mode(
