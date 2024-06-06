@@ -197,6 +197,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             logs.log_response(request=request, response=response,
                               start_time=start_time, engine_metrics=res.metrics,
                               sub_request_num=i, logger=logger)
+            service_metrics.observe_generation_success(start_time=start_time)
             responses[i] = response
 
         return BatchedGenerationResponse(responses=responses)
@@ -279,6 +280,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                           engine_metrics=last_engine_response.metrics
                           if last_engine_response else None,
                           logger=logger)
+        service_metrics.observe_generation_success(start_time=start_time)
 
     def _convert_input_details(
             self, result: RequestOutput, resp_options: ResponseOptions,
@@ -569,7 +571,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
     @log_rpc_handler_errors
     async def Tokenize(self, request: BatchedTokenizeRequest,
                        context: ServicerContext) -> BatchedTokenizeResponse:
-        service_metrics.observe_tokenization_request(request)
+        service_metrics.count_tokenization_request(request)
         #TODO implement these
         if request.return_offsets:
             await context.abort(StatusCode.INVALID_ARGUMENT,
