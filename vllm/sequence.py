@@ -380,6 +380,7 @@ class Sequence:
         """
         if self.data.stage == SequenceStage.DECODE:
             return 1
+ 
         return self.data.get_num_uncomputed_tokens()
 
     def is_prefill(self) -> bool:
@@ -428,6 +429,7 @@ class SequenceGroup:
         pooling_params: Optional[PoolingParams] = None,
         encoder_seq: Optional[Sequence] = None,
         trace_headers: Optional[Dict[str, str]] = None,
+        priority: Optional[int] = None,
     ) -> None:
         self.request_id = request_id
         self.seqs_dict = {seq.seq_id: seq for seq in seqs}
@@ -444,6 +446,7 @@ class SequenceGroup:
         self.pooling_params = pooling_params
         self.encoder_seq = encoder_seq
         self.trace_headers = trace_headers
+        self.priority = priority
 
     @property
     def prompt(self) -> Optional[str]:

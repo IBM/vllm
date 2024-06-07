@@ -585,14 +585,13 @@ class LLMEngine:
             trace_headers=trace_headers,
         )
 
-    def _create_sequence_group_with_sampling(
-        self,
         request_id: str,
         seq: Sequence,
         sampling_params: SamplingParams,
         arrival_time: float,
         lora_request: Optional[LoRARequest],
         trace_headers: Optional[Dict[str, str]] = None,
+        priority: int = 0,
     ) -> SequenceGroup:
         """Creates a SequenceGroup with SamplingParams."""
         max_logprobs = self.get_model_config().max_logprobs
@@ -613,6 +612,7 @@ class LLMEngine:
         sampling_params.update_from_generation_config(
             self.generation_config_fields)
 
+
         # Create the sequence group.
         seq_group = SequenceGroup(
             request_id=request_id,
@@ -621,7 +621,7 @@ class LLMEngine:
             sampling_params=sampling_params,
             lora_request=lora_request,
             trace_headers=trace_headers,
-        )
+            priority=priority)
 
         return seq_group
 
@@ -632,6 +632,7 @@ class LLMEngine:
         pooling_params: PoolingParams,
         arrival_time: float,
         lora_request: Optional[LoRARequest],
+        priority: int = 0,
     ) -> SequenceGroup:
         """Creates a SequenceGroup with PoolingParams."""
         # Defensive copy of PoolingParams, which are used by the pooler
@@ -642,6 +643,7 @@ class LLMEngine:
                                   arrival_time=arrival_time,
                                   lora_request=lora_request,
                                   pooling_params=pooling_params)
+                                  priority=priority)
         return seq_group
 
     def abort_request(self, request_id: Union[str, Iterable[str]]) -> None:
