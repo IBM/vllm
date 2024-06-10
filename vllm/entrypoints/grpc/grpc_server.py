@@ -32,10 +32,13 @@ from vllm.entrypoints.grpc.pb.generation_pb2 import (BatchedGenerationRequest,
                                                      TokenizeResponse)
 from vllm.entrypoints.grpc.validation import validate_input, validate_params
 from vllm.entrypoints.openai.serving_completion import merge_async_iterators
+from vllm.inputs import TextTokensPrompt
 from vllm.logger import init_logger
 from vllm.lora.request import LoRARequest
 from vllm.sequence import Logprob
 from vllm.tgis_utils import logs
+from vllm.tgis_utils.guided_decoding import (
+    get_outlines_guided_decoding_logits_processor)
 from vllm.tgis_utils.logits_processors import (ExpDecayLengthPenaltyWarper,
                                                TypicalLogitsWarperWrapper)
 from vllm.tgis_utils.metrics import (FailureReasonLabel, ServiceMetrics,
@@ -161,13 +164,16 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             input_ids, max_is_token_limit[i]\
                 = await self._validate_prompt_and_tokenize(
                     sampling_params, truncate_input_tokens, req.text, context)
+            inputs = TextTokensPrompt(
+                prompt=req.text,
+                prompt_token_ids=input_ids
+            )
             generators.append(
                 # prompt is supplied for observability, the text is not
                 # re-tokenized when `prompt_token_ids` is supplied
-                self.engine.generate(prompt=req.text,
+                self.engine.generate(inputs=inputs,
                                      sampling_params=sampling_params,
                                      request_id=f"{request_id}-{i}",
-                                     prompt_token_ids=input_ids,
                                      **adapter_kwargs),
             )
 
@@ -204,6 +210,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             logs.log_response(request=request, response=response,
                               start_time=start_time, engine_metrics=res.metrics,
                               sub_request_num=i, logger=logger)
+            service_metrics.observe_generation_success(start_time=start_time)
             responses[i] = response
 
         return BatchedGenerationResponse(responses=responses)
@@ -225,14 +232,17 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             context)
 
         adapter_kwargs = await self._validate_adapters(request, context)
+        inputs = TextTokensPrompt(
+            prompt=request.request.text,
+            prompt_token_ids=input_ids
+        )
 
         result_generator = self.engine.generate(
             # prompt is supplied for observability, the text is not
             # re-tokenized when `prompt_token_ids` is supplied
-            prompt=request.request.text,
+            inputs=inputs,
             sampling_params=sampling_params,
             request_id=request_id,
-            prompt_token_ids=input_ids,
             **adapter_kwargs
         )
 
@@ -285,6 +295,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                           engine_metrics=last_engine_response.metrics
                           if last_engine_response else None,
                           logger=logger)
+        service_metrics.observe_generation_success(start_time=start_time)
 
     def _convert_input_details(
             self, result: RequestOutput, resp_options: ResponseOptions,
@@ -405,6 +416,12 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             logits_processors.append(
                 ExpDecayLengthPenaltyWarper(length_penalty=length_penalty_tuple,
                                             eos_token_id=self.tokenizer.eos_token_id))
+
+        guided_decode_logit_processor = (
+            await get_outlines_guided_decoding_logits_processor(decoding,
+                                                          self.tokenizer))
+        if guided_decode_logit_processor is not None:
+            logits_processors.append(guided_decode_logit_processor)
 
         time_limit_millis = stopping.time_limit_millis
         deadline = time.time(
@@ -582,7 +599,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
     @log_rpc_handler_errors
     async def Tokenize(self, request: BatchedTokenizeRequest,
                        context: ServicerContext) -> BatchedTokenizeResponse:
-        service_metrics.observe_tokenization_request(request)
+        service_metrics.count_tokenization_request(request)
         #TODO implement these
         if request.return_offsets:
             await context.abort(StatusCode.INVALID_ARGUMENT,

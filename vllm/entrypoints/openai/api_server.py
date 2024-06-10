@@ -39,7 +39,7 @@ openai_serving_completion: OpenAIServingCompletion
 openai_serving_embedding: OpenAIServingEmbedding
 async_llm_engine: AsyncLLMEngine
 
-logger = init_logger(__name__)
+logger = init_logger('vllm.entrypoints.openai.api_server')
 
 _running_tasks: Set[asyncio.Task] = set()
 
