@@ -14,6 +14,7 @@ from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 from vllm import (AsyncLLMEngine, CompletionOutput, RequestOutput,
                   SamplingParams)
 from vllm.config import ModelConfig
+from vllm.entrypoints.grpc.adapters import AdapterStore, validate_adapters
 from vllm.entrypoints.grpc.pb import generation_pb2_grpc  # type: ignore
 # yapf: disable
 from vllm.entrypoints.grpc.pb.generation_pb2 import (BatchedGenerationRequest,
@@ -33,6 +34,7 @@ from vllm.entrypoints.grpc.validation import validate_input, validate_params
 from vllm.entrypoints.openai.serving_completion import merge_async_iterators
 from vllm.inputs import TextTokensPrompt
 from vllm.logger import init_logger
+from vllm.lora.request import LoRARequest
 from vllm.sequence import Logprob
 from vllm.tgis_utils import logs
 from vllm.tgis_utils.guided_decoding import (
@@ -119,6 +121,13 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         self.skip_special_tokens = not args.output_special_tokens
         self.default_include_stop_seqs = args.default_include_stop_seqs
 
+        self.adapter_store: Optional[AdapterStore] = None
+        if args.adapter_cache:
+            self.adapter_store = AdapterStore(
+                cache_path=args.adapter_cache,
+                adapters={}
+            )
+
     async def _post_init(self):
         self.config = await self.engine.get_model_config()
         # self.tokenizer_group = await self.engine.get_tokenizer_group()
@@ -148,6 +157,9 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
 
         generators = []
         max_is_token_limit = [False] * request_count
+
+        adapter_kwargs = await self._validate_adapters(request, context)
+
         for i, req in enumerate(request.requests):
             input_ids, max_is_token_limit[i]\
                 = await self._validate_prompt_and_tokenize(
@@ -161,7 +173,8 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                 # re-tokenized when `prompt_token_ids` is supplied
                 self.engine.generate(inputs=inputs,
                                      sampling_params=sampling_params,
-                                     request_id=f"{request_id}-{i}"),
+                                     request_id=f"{request_id}-{i}",
+                                     **adapter_kwargs),
             )
 
         # TODO handle cancellation
@@ -218,6 +231,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             sampling_params, truncate_input_tokens, request.request.text,
             context)
 
+        adapter_kwargs = await self._validate_adapters(request, context)
         inputs = TextTokensPrompt(
             prompt=request.request.text,
             prompt_token_ids=input_ids
@@ -228,7 +242,8 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
             # re-tokenized when `prompt_token_ids` is supplied
             inputs=inputs,
             sampling_params=sampling_params,
-            request_id=request_id
+            request_id=request_id,
+            **adapter_kwargs
         )
 
         resp_options = request.params.response
@@ -441,6 +456,19 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                                 str(vllm_validation_error))
 
         return sampling_params, deadline
+
+    async def _validate_adapters(self,
+                                 request: Union[SingleGenerationRequest,
+                                                BatchedGenerationRequest],
+                                 context: ServicerContext) \
+            -> Dict[str, LoRARequest]:
+        try:
+            adapters = await validate_adapters(
+                request=request, adapter_store=self.adapter_store)
+        except ValueError as e:
+            service_metrics.count_request_failure(FailureReasonLabel.VALIDATION)
+            await context.abort(StatusCode.INVALID_ARGUMENT, str(e))
+        return adapters
 
     @staticmethod
     def _convert_reason(output: CompletionOutput, max_is_token_limit: bool,
