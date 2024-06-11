@@ -5,6 +5,8 @@ import concurrent.futures
 import dataclasses
 import json
 import os
+import re
+from pathlib import Path
 from typing import Dict, Optional, Union
 
 from vllm.entrypoints.grpc.pb.generation_pb2 import (BatchedGenerationRequest,
@@ -13,6 +15,8 @@ from vllm.entrypoints.grpc.validation import TGISValidationError
 from vllm.lora.request import LoRARequest
 
 global_thread_pool = None  # used for loading adapter files from disk
+
+VALID_ADAPTER_ID_PATTERN = re.compile("[/\\w\\-]+")
 
 
 @dataclasses.dataclass
@@ -50,6 +54,7 @@ async def validate_adapters(
     # If not already cached, we need to validate that files exist and
     # grab the type out of the adapter_config.json file
     if (adapter_metadata := adapter_store.adapters.get(adapter_id)) is None:
+        _reject_bad_adapter_id(adapter_id)
         local_adapter_path = os.path.join(adapter_store.cache_path, adapter_id)
 
         loop = asyncio.get_running_loop()
@@ -98,3 +103,16 @@ def _get_adapter_type_from_file(adapter_id: str, adapter_path: str) -> str:
         adapter_config = json.load(adapter_config_file)
 
     return adapter_config.get("peft_type", None)
+
+
+def _reject_bad_adapter_id(adapter_id: str) -> None:
+    """Raise if the adapter id attempts path traversal or has invalid file path
+    characters"""
+    if not VALID_ADAPTER_ID_PATTERN.fullmatch(adapter_id):
+        TGISValidationError.InvalidAdapterID.error(adapter_id)
+
+    # Check for path traversal
+    root_path = Path("/some/file/root")
+    derived_path = root_path / adapter_id
+    if not os.path.normpath(derived_path).startswith(str(root_path) + "/"):
+        TGISValidationError.InvalidAdapterID.error(adapter_id)

@@ -43,6 +43,8 @@ class TGISValidationError(str, Enum):
     AdapterNotFound = "can't retrieve adapter with id '{0}': {1}"
     AdaptersDisabled = "adapter_id supplied but no adapter store was configured"
     AdapterUnsupported = "adapter type {0} is not currently supported"
+    InvalidAdapterID = ("Invalid adapter id '{0}', must contain only "
+                        "alphanumeric, _ and - and /")
 
     def error(self, *args, **kwargs) -> typing.NoReturn:
         """Raises a ValueError with a nicely formatted string"""
