@@ -228,7 +228,8 @@ class ModelConfig:
         self,
         parallel_config: "ParallelConfig",
     ) -> None:
-        total_num_attention_heads = self.hf_text_config.num_attention_heads
+        total_num_attention_heads = getattr(self.hf_text_config,
+                                            "num_attention_heads", 0)
         tensor_parallel_size = parallel_config.tensor_parallel_size
         if total_num_attention_heads % tensor_parallel_size != 0:
             raise ValueError(
@@ -236,7 +237,8 @@ class ModelConfig:
                 " must be divisible by tensor parallel size "
                 f"({tensor_parallel_size}).")
 
-        total_num_hidden_layers = self.hf_text_config.num_hidden_layers
+        total_num_hidden_layers = getattr(self.hf_text_config,
+                                          "num_hidden_layers", 0)
         pipeline_parallel_size = parallel_config.pipeline_parallel_size
         if total_num_hidden_layers % pipeline_parallel_size != 0:
             raise ValueError(
@@ -335,8 +337,8 @@ class ModelConfig:
 
     def get_num_attention_heads(self,
                                 parallel_config: "ParallelConfig") -> int:
-        return self.hf_text_config.num_attention_heads // \
-            parallel_config.tensor_parallel_size
+        num_heads = getattr(self.hf_text_config, "num_attention_heads", 0)
+        return num_heads // parallel_config.tensor_parallel_size
 
     def get_num_layers(self, parallel_config: "ParallelConfig") -> int:
         total_num_hidden_layers = self.hf_text_config.num_hidden_layers
