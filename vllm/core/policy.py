@@ -1,5 +1,5 @@
 from collections import deque
-from typing import Deque
+from typing import Deque, Tuple
 
 from vllm.sequence import SequenceGroup
 
@@ -10,7 +10,7 @@ class Policy:
         self,
         now: float,
         seq_group: SequenceGroup,
-    ) -> float:
+    ) -> Tuple[float, ...]:
         raise NotImplementedError
 
     def sort_by_priority(
@@ -32,18 +32,19 @@ class FCFS(Policy):
         self,
         now: float,
         seq_group: SequenceGroup,
-    ) -> float:
-        return now - seq_group.metrics.arrival_time
+    ) -> Tuple[float, ...]:
+        return (now - seq_group.metrics.arrival_time)
 
 
 class SP(Policy):
-    
+
     def get_priority(
         self,
         now: float,
         seq_group: SequenceGroup,
-    ) -> float:
-        return (-seq_group.priority, now - seq_group.metrics.arrival_time)
+    ) -> Tuple[float, ...]:
+        return (seq_group.priority, now - seq_group.metrics.arrival_time)
+
 
 class PolicyFactory:
 

@@ -585,6 +585,8 @@ class LLMEngine:
             trace_headers=trace_headers,
         )
 
+    def _create_sequence_group_with_sampling(
+        self,
         request_id: str,
         seq: Sequence,
         sampling_params: SamplingParams,
@@ -611,7 +613,6 @@ class LLMEngine:
             sampling_params.all_stop_token_ids.add(seq.eos_token_id)
         sampling_params.update_from_generation_config(
             self.generation_config_fields)
-
 
         # Create the sequence group.
         seq_group = SequenceGroup(
@@ -642,7 +643,7 @@ class LLMEngine:
                                   seqs=[seq],
                                   arrival_time=arrival_time,
                                   lora_request=lora_request,
-                                  pooling_params=pooling_params)
+                                  pooling_params=pooling_params,
                                   priority=priority)
         return seq_group
 
