@@ -35,6 +35,7 @@ from vllm.entrypoints.openai.serving_completion import merge_async_iterators
 from vllm.inputs import TextTokensPrompt
 from vllm.logger import init_logger
 from vllm.lora.request import LoRARequest
+from vllm.prompt_adapter.request import PromptAdapterRequest
 from vllm.sequence import Logprob
 from vllm.tgis_utils import logs
 from vllm.tgis_utils.guided_decoding import (
@@ -122,9 +123,11 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         self.default_include_stop_seqs = args.default_include_stop_seqs
 
         self.adapter_store: Optional[AdapterStore] = None
-        if args.adapter_cache:
+        # Backwards compatibility for TGIS: PREFIX_STORE_PATH
+        adapter_cache_path = args.adapter_cache or args.prefix_store_path
+        if adapter_cache_path:
             self.adapter_store = AdapterStore(
-                cache_path=args.adapter_cache,
+                cache_path=adapter_cache_path,
                 adapters={}
             )
 
@@ -476,7 +479,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                                  request: Union[SingleGenerationRequest,
                                                 BatchedGenerationRequest],
                                  context: ServicerContext) \
-            -> Dict[str, LoRARequest]:
+            -> Dict[str, Union[LoRARequest, PromptAdapterRequest]]:
         try:
             adapters = await validate_adapters(
                 request=request, adapter_store=self.adapter_store)
