@@ -123,9 +123,11 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         self.default_include_stop_seqs = args.default_include_stop_seqs
 
         self.adapter_store: Optional[AdapterStore] = None
-        if args.adapter_cache:
+        # Backwards compatibility for TGIS: PREFIX_STORE_PATH
+        adapter_cache_path = args.adapter_cache or args.prefix_store_path
+        if adapter_cache_path:
             self.adapter_store = AdapterStore(
-                cache_path=args.adapter_cache,
+                cache_path=adapter_cache_path,
                 adapters={}
             )
 
