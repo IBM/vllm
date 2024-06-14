@@ -7,7 +7,7 @@ from typing import Tuple, Union
 import vllm.model_executor.guided_decoding.outlines_decoding as outlines_decoding  # noqa: E501
 from vllm.entrypoints.grpc.pb.generation_pb2 import DecodingParameters
 from vllm.model_executor.guided_decoding.outlines_decoding import (
-    GuidedDecodingMode, _get_cached_logits_processor)
+    GuidedDecodingMode, _get_logits_processor)
 from vllm.model_executor.guided_decoding.outlines_logits_processors import (
     JSONLogitsProcessor, RegexLogitsProcessor)
 
@@ -32,7 +32,7 @@ async def get_outlines_guided_decoding_logits_processor(
 
     result = await loop.run_in_executor(
         outlines_decoding.global_thread_pool,
-        _get_cached_logits_processor,
+        _get_logits_processor,
         guide,
         tokenizer,
         mode,
