@@ -9,6 +9,8 @@ import re
 from pathlib import Path
 from typing import Dict, Optional, Union
 
+import torch
+
 from vllm.entrypoints.grpc.pb.generation_pb2 import (BatchedGenerationRequest,
                                                      SingleGenerationRequest)
 from vllm.entrypoints.grpc.validation import TGISValidationError
@@ -88,6 +90,7 @@ async def validate_adapters(
                                    lora_local_path=adapter_metadata.full_path)
         return {"lora_request": lora_request}
     elif adapter_metadata.adapter_type == "PROMPT_TUNING":
+        print("\n\n PROMPT TUNING!!!!! \n\n")
         prompt_adapter_request = PromptAdapterRequest(
             prompt_adapter_id=adapter_metadata.unique_id,
             prompt_adapter_name=adapter_id,
@@ -109,9 +112,23 @@ def _load_adapter_config_from_file(adapter_id: str, adapter_path: str) -> Dict:
                                                   "directory does not exist")
 
     adapter_config_path = os.path.join(adapter_path, "adapter_config.json")
-    if not os.path.exists(adapter_config_path):
+    decoder_pt_path = os.path.join(adapter_path, "decoder.pt")
+    if not os.path.exists(adapter_config_path) and not os.path.exists(
+            decoder_pt_path):
         TGISValidationError.AdapterNotFound.error(
-            adapter_id, "invalid adapter: no adapter_config.json found")
+            adapter_id, "No supported adapter format found")
+
+    if os.path.exists(decoder_pt_path):
+        # Big assumption: This is a prompt-tuned adapter
+        # Sad: Need to know # virtual tokens up front here
+        prompt_embedding = torch.load(decoder_pt_path,
+                                      weights_only=True,
+                                      map_location="cpu")
+        num_virtual_tokens = prompt_embedding.shape[0]
+        return {
+            "peft_type": "PROMPT_TUNING",
+            "num_virtual_tokens": num_virtual_tokens
+        }
 
     # NB: blocks event loop
     with open(adapter_config_path) as adapter_config_file:

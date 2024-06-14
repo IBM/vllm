@@ -44,6 +44,7 @@ from vllm.tgis_utils.logits_processors import (ExpDecayLengthPenaltyWarper,
                                                TypicalLogitsWarperWrapper)
 from vllm.tgis_utils.metrics import (FailureReasonLabel, ServiceMetrics,
                                      TGISStatLogger)
+from vllm.tgis_utils.monkey_patch import monkey_patch_prompt_adapter
 from vllm.transformers_utils.tokenizer_group import BaseTokenizerGroup
 
 logger = init_logger(__name__)
@@ -130,6 +131,7 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                 cache_path=adapter_cache_path,
                 adapters={}
             )
+        monkey_patch_prompt_adapter()
 
     async def _post_init(self):
         self.config = await self.engine.get_model_config()
@@ -162,6 +164,8 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         max_is_token_limit = [False] * request_count
 
         adapter_kwargs = await self._validate_adapters(request, context)
+
+        print(f"\n\n ~~~ ADAPTER KWARGS {adapter_kwargs} ~~~ \n\n")
 
         for i, req in enumerate(request.requests):
             input_ids, max_is_token_limit[i]\
