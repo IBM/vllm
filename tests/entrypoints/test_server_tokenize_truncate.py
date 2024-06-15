@@ -17,6 +17,7 @@ PORT = 8033
 # The tokenizer was tested using the following model:
 MODEL_NAME = "facebook/opt-125m"
 
+
 @pytest.fixture(scope="module")
 def server():
     ray.init()
@@ -31,6 +32,7 @@ def server():
     yield server_runner
     ray.shutdown()
 
+
 # Fixture to create a gRPC stub for the GenerationService
 @pytest.fixture(scope="module")
 def grpc_stub():
@@ -38,6 +40,7 @@ def grpc_stub():
     stub = gpb2.GenerationServiceStub(channel)
     yield stub
     channel.close()
+
 
 # Test cases
 @pytest.mark.parametrize("test_case", [
@@ -48,15 +51,37 @@ def grpc_stub():
             "return_offsets": True,
         },
         "response": {
-            "tokenCount": 7,
+            "tokenCount":
+            7,
             "offsets": [
-                {"start": 0, "end": 0},
-                {"start": 0, "end": 3},
-                {"start": 3, "end": 8},
-                {"start": 8, "end": 13},
-                {"start": 13, "end": 19},
-                {"start": 19, "end": 22},
-                {"start": 22, "end": 30},
+                {
+                    "start": 0,
+                    "end": 0
+                },
+                {
+                    "start": 0,
+                    "end": 3
+                },
+                {
+                    "start": 3,
+                    "end": 8
+                },
+                {
+                    "start": 8,
+                    "end": 13
+                },
+                {
+                    "start": 13,
+                    "end": 19
+                },
+                {
+                    "start": 19,
+                    "end": 22
+                },
+                {
+                    "start": 22,
+                    "end": 30
+                },
             ],
         },
     },
@@ -68,24 +93,39 @@ def grpc_stub():
             "return_offsets": True,
         },
         "response": {
-            "tokenCount": 7,
-            "tokens": [
-                "</s>",
-                "The",
-                "Ġvery",
-                "Ġlong",
-                "Ġstory",
-                "Ġis",
-                "Ġwritten"
-            ],
+            "tokenCount":
+            7,
+            "tokens":
+            ["</s>", "The", "Ġvery", "Ġlong", "Ġstory", "Ġis", "Ġwritten"],
             "offsets": [
-                {"start": 0, "end": 0},
-                {"start": 0, "end": 3},
-                {"start": 3, "end": 8},
-                {"start": 8, "end": 13},
-                {"start": 13, "end": 19},
-                {"start": 19, "end": 22},
-                {"start": 22, "end": 30},
+                {
+                    "start": 0,
+                    "end": 0
+                },
+                {
+                    "start": 0,
+                    "end": 3
+                },
+                {
+                    "start": 3,
+                    "end": 8
+                },
+                {
+                    "start": 8,
+                    "end": 13
+                },
+                {
+                    "start": 13,
+                    "end": 19
+                },
+                {
+                    "start": 19,
+                    "end": 22
+                },
+                {
+                    "start": 22,
+                    "end": 30
+                },
             ],
         },
     },
@@ -97,7 +137,8 @@ def grpc_stub():
             "truncate_input_tokens": 10,
         },
         "response": {
-            "tokenCount": 10,
+            "tokenCount":
+            10,
             "tokens": [
                 "Ġvery",
                 "Ġlong",
@@ -113,7 +154,8 @@ def grpc_stub():
         },
     },
     {
-        "name": "Tokenize, trunc and offset for a request with no text message",
+        "name":
+        "Tokenize, trunc and offset for a request with no text message",
         "request": {
             "text": "",
             "return_offsets": True,
@@ -122,15 +164,13 @@ def grpc_stub():
         },
         "response": {
             "tokenCount": 1,
-            "tokens": [
-                "</s>"
-            ],
+            "tokens": ["</s>"],
         },
     },
     {
         "name": "A request without text ('') and parameters",
         "request": {
-            "text" : ""
+            "text": ""
         },
         "response": {
             "tokenCount": 1
@@ -139,7 +179,7 @@ def grpc_stub():
     {
         "name": "A request without text (None) and parameters",
         "request": {
-            "text" : None
+            "text": None
         },
         "response": {
             "tokenCount": 1
@@ -158,8 +198,7 @@ def test_tokenization(server, grpc_stub, test_case):
         requests=[pb2.TokenizeRequest(text=text)],
         return_tokens=request.get('return_tokens', False),
         return_offsets=request.get('return_offsets', False),
-        truncate_input_tokens=truncate_input_tokens
-    )
+        truncate_input_tokens=truncate_input_tokens)
 
     try:
         responses = grpc_stub.Tokenize(batch).responses
@@ -188,6 +227,7 @@ def test_tokenization(server, grpc_stub, test_case):
                 "End offset mismatch"
 
     print("Test case passed: ", test_case["name"])
+
 
 if __name__ == "__main__":
     pytest.main([__file__])
