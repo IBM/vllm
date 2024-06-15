@@ -6,7 +6,6 @@ import ray
 import grpc
 # to install pb, run Makefile to compile grpc protobuf
 from .pb import generation_pb2_grpc as gpb2, generation_pb2 as pb2
-from vllm.transformers_utils.tokenizer import get_tokenizer
 
 from ..utils import ServerRunner
 
