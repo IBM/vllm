@@ -250,6 +250,7 @@ class LLM:
         prompt_token_ids: Optional[Union[List[int], List[List[int]]]] = None,
         use_tqdm: bool = True,
         lora_request: Optional[Union[List[LoRARequest], LoRARequest]] = None,
+        priorities: List[int] = None
     ) -> List[RequestOutput]:
         """Generates the completions for the input prompts.
 
@@ -281,6 +282,7 @@ class LLM:
                 "LLM.generate() is only supported for generation models "
                 "(XForCausalLM).")
 
+
         if prompt_token_ids is not None:
             inputs = self._convert_v1_inputs(
                 prompts=cast(Optional[Union[str, List[str]]], prompts),
@@ -299,6 +301,7 @@ class LLM:
             inputs=inputs,
             params=sampling_params,
             lora_request=lora_request,
+            priorities=priorities
         )
 
         outputs = self._run_engine(use_tqdm=use_tqdm)
@@ -499,6 +502,7 @@ class LLM:
         params: Union[SamplingParams, Sequence[SamplingParams], PoolingParams,
                       Sequence[PoolingParams]],
         lora_request: Optional[Union[Sequence[LoRARequest], LoRARequest]],
+        priorities: Optional[List[int]]
     ) -> None:
         if isinstance(inputs, (str, dict)):
             # Convert a single prompt to a list.
@@ -520,7 +524,7 @@ class LLM:
                 request_inputs,
                 params[i] if isinstance(params, Sequence) else params,
                 lora_request=lora_request[i] if isinstance(
-                    lora_request, Sequence) else lora_request,
+                priority = 
             )
 
     def _add_request(

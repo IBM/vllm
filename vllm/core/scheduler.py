@@ -845,6 +845,7 @@ class Scheduler:
 
         policy = PolicyFactory.get_policy(
             policy_name=self.scheduler_config.policy)
+
         # Don't schedule decodes if prefills are scheduled.
         # NOTE: If `_schedule_prefills` doesn't enable chunking, self.running
         # only contains decode requests, not chunked prefills.
