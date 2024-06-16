@@ -524,7 +524,8 @@ class LLM:
                 request_inputs,
                 params[i] if isinstance(params, Sequence) else params,
                 lora_request=lora_request[i] if isinstance(
-                priority = 
+                                lora_request, Sequence) else lora_request,
+                priority = priorities[i] 
             )
 
     def _add_request(
