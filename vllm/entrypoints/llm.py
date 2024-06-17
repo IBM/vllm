@@ -242,16 +242,18 @@ class LLM:
                       additional_message="Please use the 'inputs' parameter "
                       "instead.")
     def generate(
-        self,
-        prompts: Union[Union[PromptStrictInputs, Sequence[PromptStrictInputs]],
-                       Optional[Union[str, List[str]]]] = None,
-        sampling_params: Optional[Union[SamplingParams,
-                                        Sequence[SamplingParams]]] = None,
-        prompt_token_ids: Optional[Union[List[int], List[List[int]]]] = None,
-        use_tqdm: bool = True,
-        lora_request: Optional[Union[List[LoRARequest], LoRARequest]] = None,
-        priorities: List[int] = None
-    ) -> List[RequestOutput]:
+            self,
+            prompts: Union[Union[PromptStrictInputs,
+                                 Sequence[PromptStrictInputs]],
+                           Optional[Union[str, List[str]]]] = None,
+            sampling_params: Optional[Union[SamplingParams,
+                                            Sequence[SamplingParams]]] = None,
+            prompt_token_ids: Optional[Union[List[int],
+                                             List[List[int]]]] = None,
+            use_tqdm: bool = True,
+            lora_request: Optional[Union[List[LoRARequest],
+                                         LoRARequest]] = None,
+            priorities: Optional[List[int]] = None) -> List[RequestOutput]:
         """Generates the completions for the input prompts.
 
         This class automatically batches the given prompts, considering
@@ -282,7 +284,6 @@ class LLM:
                 "LLM.generate() is only supported for generation models "
                 "(XForCausalLM).")
 
-
         if prompt_token_ids is not None:
             print(prompt_token_ids)
             inputs = self._convert_v1_inputs(
@@ -298,12 +299,10 @@ class LLM:
             # Use default sampling params.
             sampling_params = SamplingParams()
 
-        self._validate_and_add_requests(
-            inputs=inputs,
-            params=sampling_params,
-            lora_request=lora_request,
-            priorities=priorities
-        )
+        self._validate_and_add_requests(inputs=inputs,
+                                        params=sampling_params,
+                                        lora_request=lora_request,
+                                        priorities=priorities)
 
         outputs = self._run_engine(use_tqdm=use_tqdm)
         return LLMEngine.validate_outputs(outputs, RequestOutput)
@@ -396,6 +395,7 @@ class LLM:
         prompt_token_ids: Optional[Union[List[int], List[List[int]]]] = None,
         use_tqdm: bool = True,
         lora_request: Optional[Union[List[LoRARequest], LoRARequest]] = None,
+        priorities: Optional[List[int]] = None,
     ) -> List[EmbeddingRequestOutput]:
         """Generates the completions for the input prompts.
 
@@ -444,6 +444,7 @@ class LLM:
             inputs=inputs,
             params=pooling_params,
             lora_request=lora_request,
+            priorities=priorities,
         )
 
         outputs = self._run_engine(use_tqdm=use_tqdm)
@@ -497,14 +498,16 @@ class LLM:
 
         return inputs
 
-    def _validate_and_add_requests(
-        self,
-        inputs: Union[PromptStrictInputs, Sequence[PromptStrictInputs]],
-        params: Union[SamplingParams, Sequence[SamplingParams], PoolingParams,
-                      Sequence[PoolingParams]],
-        lora_request: Optional[Union[Sequence[LoRARequest], LoRARequest]],
-        priorities: Optional[List[int]]
-    ) -> None:
+    def _validate_and_add_requests(self,
+                                   inputs: Union[PromptStrictInputs,
+                                                 Sequence[PromptStrictInputs]],
+                                   params: Union[SamplingParams,
+                                                 Sequence[SamplingParams],
+                                                 PoolingParams,
+                                                 Sequence[PoolingParams]],
+                                   lora_request: Optional[Union[
+                                       Sequence[LoRARequest], LoRARequest]],
+                                   priorities: Optional[List[int]]) -> None:
         if isinstance(inputs, (str, dict)):
             # Convert a single prompt to a list.
             inputs = [inputs]
@@ -525,9 +528,8 @@ class LLM:
                 request_inputs,
                 params[i] if isinstance(params, Sequence) else params,
                 lora_request=lora_request[i] if isinstance(
-                                lora_request, Sequence) else lora_request,
-                priority = priorities[i] 
-            )
+                    lora_request, Sequence) else lora_request,
+                priority=priorities[i] if priorities is not None else 0)
 
     def _add_request(
         self,

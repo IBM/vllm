@@ -450,6 +450,7 @@ class LLMEngine:
 
         return self.tokenizer.get_lora_tokenizer(lora_request).eos_token_id
 
+<<<<<<< HEAD
     def _add_processed_request(
         self,
         request_id: str,
@@ -478,7 +479,6 @@ class LLMEngine:
                 lora_request=lora_request,
                 trace_headers=trace_headers,
                 priority=priority
-            )
         elif isinstance(params, PoolingParams):
             seq_group = self._create_sequence_group_with_pooling(
                 request_id,
@@ -486,8 +486,7 @@ class LLMEngine:
                 params,
                 arrival_time=arrival_time,
                 lora_request=lora_request,
-                priority=priority
-            )
+                priority=priority)
         else:
             raise ValueError(
                 "Either SamplingParams or PoolingParams must be provided.")
@@ -858,7 +857,6 @@ class LLMEngine:
                 which are created by the workers.
         """
 
-
         now = time.time()
 
         # System State
@@ -943,7 +941,6 @@ class LLMEngine:
                 # which can only happen once.
                 if seq_group.is_finished():
                     # Latency timings
-                    print('*** %s,%d,%f'%(seq_group.request_id,seq_group.priority, now - seq_group.metrics.arrival_time)) 
                     time_e2e_requests.append(now -
                                              seq_group.metrics.arrival_time)
 
