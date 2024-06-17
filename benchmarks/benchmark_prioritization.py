@@ -104,6 +104,7 @@ def run_vllm(
         download_dir=download_dir,
         enable_chunked_prefill=enable_chunked_prefill,
         max_num_batched_tokens=max_num_batched_tokens,
+        disable_log_stats=False,
     )
 
     # Add the requests to the engine.
@@ -124,86 +125,8 @@ def run_vllm(
             ))
 
     start = time.perf_counter()
-    llm.generate(prompts, sampling_params, priorities, use_tqdm=True)
+    llm.generate(prompts, sampling_params, priorities =priorities, use_tqdm=True)
     end = time.perf_counter()
-    return end - start
-
-
-def run_hf(
-    requests: List[Tuple[str, int, int]],
-    model: str,
-    tokenizer: PreTrainedTokenizerBase,
-    n: int,
-    use_beam_search: bool,
-    max_batch_size: int,
-    trust_remote_code: bool,
-) -> float:
-    assert not use_beam_search
-    llm = AutoModelForCausalLM.from_pretrained(
-        model, torch_dtype=torch.float16, trust_remote_code=trust_remote_code)
-    if llm.config.model_type == "llama":
-        # To enable padding in the HF backend.
-        tokenizer.pad_token = tokenizer.eos_token
-    llm = llm.cuda()
-
-    pbar = tqdm(total=len(requests))
-    start = time.perf_counter()
-    batch: List[str] = []
-    max_prompt_len = 0
-    max_output_len = 0
-    for i in range(len(requests)):
-        prompt, prompt_len, output_len = requests[i]
-        # Add the prompt to the batch.
-        batch.append(prompt)
-        max_prompt_len = max(max_prompt_len, prompt_len)
-        max_output_len = max(max_output_len, output_len)
-        if len(batch) < max_batch_size and i != len(requests) - 1:
-            # Check if we can add more requests to the batch.
-            _, next_prompt_len, next_output_len = requests[i + 1]
-            if (max(max_prompt_len, next_prompt_len) +
-                    max(max_output_len, next_output_len)) <= 2048:
-                # We can add more requests to the batch.
-                continue
-
-        # Generate the sequences.
-        input_ids = tokenizer(batch, return_tensors="pt",
-                              padding=True).input_ids
-        llm_outputs = llm.generate(
-            input_ids=input_ids.cuda(),
-            do_sample=not use_beam_search,
-            num_return_sequences=n,
-            temperature=1.0,
-            top_p=1.0,
-            use_cache=True,
-            max_new_tokens=max_output_len,
-        )
-        # Include the decoding time.
-        tokenizer.batch_decode(llm_outputs, skip_special_tokens=True)
-        pbar.update(len(batch))
-
-        # Clear the batch.
-        batch = []
-        max_prompt_len = 0
-        max_output_len = 0
-    end = time.perf_counter()
-    return end - start
-
-
-def run_mii(
-    requests: List[Tuple[str, int, int]],
-    model: str,
-    tensor_parallel_size: int,
-    output_len: int,
-) -> float:
-    from mii import client, serve
-    llm = serve(model, tensor_parallel=tensor_parallel_size)
-    prompts = [prompt for prompt, _, _ in requests]
-
-    start = time.perf_counter()
-    llm.generate(prompts, max_new_tokens=output_len)
-    end = time.perf_counter()
-    client = client(model)
-    client.terminate_server()
     return end - start
 
 
@@ -233,18 +156,10 @@ def main(args: argparse.Namespace):
             args.enable_prefix_caching, args.enable_chunked_prefill,
             args.max_num_batched_tokens, args.gpu_memory_utilization,
             args.download_dir)
-    elif args.backend == "hf":
-        assert args.tensor_parallel_size == 1
-        elapsed_time = run_hf(requests, args.model, tokenizer, args.n,
-                              args.use_beam_search, args.hf_max_batch_size,
-                              args.trust_remote_code)
-    elif args.backend == "mii":
-        elapsed_time = run_mii(requests, args.model, args.tensor_parallel_size,
-                               args.output_len)
     else:
         raise ValueError(f"Unknown backend: {args.backend}")
     total_num_tokens = sum(prompt_len + output_len
-                           for _, prompt_len, output_len in requests)
+                           for _, prompt_len, output_len, priority in requests)
     print(f"Throughput: {len(requests) / elapsed_time:.2f} requests/s, "
           f"{total_num_tokens / elapsed_time:.2f} tokens/s")
 
@@ -294,7 +209,7 @@ if __name__ == "__main__":
     parser.add_argument("--use-beam-search", action="store_true")
     parser.add_argument("--num-prompts",
                         type=int,
-                        default=1000,
+                        default=200,
                         help="Number of prompts to process.")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--hf-max-batch-size",
@@ -376,10 +291,10 @@ if __name__ == "__main__":
         help='Path to save the throughput results in JSON format.')
     
     parser.add_argument(
-        '--enable-prioritization',
+        '--scheduling-policy',
         type=bool,
-        default=False,
-        help='Enable strict priority scheduling.')
+        default='sp',
+        help='sp: Strict Priority, fcfs: First Come First Serve')
 
     args = parser.parse_args()
     if args.tokenizer is None:
@@ -393,23 +308,5 @@ if __name__ == "__main__":
     if args.backend == "vllm":
         if args.hf_max_batch_size is not None:
             raise ValueError("HF max batch size is only for HF backend.")
-    elif args.backend == "hf":
-        if args.hf_max_batch_size is None:
-            raise ValueError("HF max batch size is required for HF backend.")
-        if args.quantization is not None:
-            raise ValueError("Quantization is only for vLLM backend.")
-    elif args.backend == "mii":
-        if args.dtype != "auto":
-            raise ValueError("dtype must be auto for MII backend.")
-        if args.n != 1:
-            raise ValueError("n must be 1 for MII backend.")
-        if args.use_beam_search:
-            raise ValueError("Beam search is not supported for MII backend.")
-        if args.quantization is not None:
-            raise ValueError("Quantization is only for vLLM backend.")
-        if args.hf_max_batch_size is not None:
-            raise ValueError("HF max batch size is only for HF backend.")
-        if args.tokenizer != args.model:
-            raise ValueError("Tokenizer must be the same as the model for MII "
-                             "backend.")
+
     main(args)

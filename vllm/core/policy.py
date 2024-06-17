@@ -43,7 +43,7 @@ class SP(Policy):
         now: float,
         seq_group: SequenceGroup,
     ) -> Tuple[float, ...]:
-        return (seq_group.priority, now - seq_group.metrics.arrival_time)
+        return (-seq_group.priority, now - seq_group.metrics.arrival_time)
 
 
 class PolicyFactory:

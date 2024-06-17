@@ -458,6 +458,7 @@ class LLMEngine:
         arrival_time: float,
         lora_request: Optional[LoRARequest],
         trace_headers: Optional[Dict[str, str]] = None,
+        priority: int = 0
     ) -> None:
         # Create the sequences.
         block_size = self.cache_config.block_size
@@ -476,6 +477,7 @@ class LLMEngine:
                 arrival_time=arrival_time,
                 lora_request=lora_request,
                 trace_headers=trace_headers,
+                priority=priority
             )
         elif isinstance(params, PoolingParams):
             seq_group = self._create_sequence_group_with_pooling(
@@ -484,6 +486,7 @@ class LLMEngine:
                 params,
                 arrival_time=arrival_time,
                 lora_request=lora_request,
+                priority=priority
             )
         else:
             raise ValueError(
@@ -523,6 +526,7 @@ class LLMEngine:
         arrival_time: Optional[float] = None,
         lora_request: Optional[LoRARequest] = None,
         trace_headers: Optional[Dict[str, str]] = None,
+        priority: int = None
     ) -> None:
         """Add a request to the engine's request pool.
 
@@ -583,6 +587,7 @@ class LLMEngine:
             arrival_time=arrival_time,
             lora_request=lora_request,
             trace_headers=trace_headers,
+            priority=priority
         )
 
     def _create_sequence_group_with_sampling(
@@ -852,6 +857,8 @@ class LLMEngine:
             model_output: Optional, used to emit speculative decoding metrics
                 which are created by the workers.
         """
+
+
         now = time.time()
 
         # System State
@@ -936,6 +943,7 @@ class LLMEngine:
                 # which can only happen once.
                 if seq_group.is_finished():
                     # Latency timings
+                    print('*** %s,%d,%f'%(seq_group.request_id,seq_group.priority, now - seq_group.metrics.arrival_time)) 
                     time_e2e_requests.append(now -
                                              seq_group.metrics.arrival_time)
 

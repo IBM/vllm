@@ -284,6 +284,7 @@ class LLM:
 
 
         if prompt_token_ids is not None:
+            print(prompt_token_ids)
             inputs = self._convert_v1_inputs(
                 prompts=cast(Optional[Union[str, List[str]]], prompts),
                 prompt_token_ids=prompt_token_ids,
@@ -533,12 +534,14 @@ class LLM:
         inputs: PromptInputs,
         params: Union[SamplingParams, PoolingParams],
         lora_request: Optional[Union[List[LoRARequest], LoRARequest]] = None,
+        priority: int = 0,
     ) -> None:
         request_id = str(next(self.request_counter))
         self.llm_engine.add_request(request_id,
                                     inputs,
                                     params,
-                                    lora_request=lora_request)
+                                    lora_request=lora_request,
+                                    priority=priority)
 
     def _run_engine(
             self, *, use_tqdm: bool

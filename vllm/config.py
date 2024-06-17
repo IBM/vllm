@@ -686,6 +686,7 @@ class SchedulerConfig:
             swapping. However, when the sequence group has multiple sequences
             (e.g., beam search), recomputation is not currently supported. In
             such a case, we use swapping instead.
+        policy: Scheduling policy used either FCFS or SP
     """
 
     def __init__(self,
