@@ -14,7 +14,7 @@ from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 from vllm import (AsyncLLMEngine, CompletionOutput, RequestOutput,
                   SamplingParams)
 from vllm.config import ModelConfig
-from vllm.entrypoints.grpc.adapters import AdapterStore, validate_adapters
+from vllm.entrypoints.grpc.adapters import AdapterStore, validate_adapters, PeftTypes
 from vllm.entrypoints.grpc.pb import generation_pb2_grpc  # type: ignore
 # yapf: disable
 from vllm.entrypoints.grpc.pb.generation_pb2 import (BatchedGenerationRequest,
@@ -124,12 +124,20 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
         self.default_include_stop_seqs = args.default_include_stop_seqs
 
         self.adapter_store: Optional[AdapterStore] = None
+
+        enabled_adapters = set()
+        if args.enable_lora:
+            enabled_adapters.add(PeftTypes.LORA)
+        if args.enable_prompt_adapter:
+            enabled_adapters.add(PeftTypes.PROMPT_TUNING)
+
         # Backwards compatibility for TGIS: PREFIX_STORE_PATH
         adapter_cache_path = args.adapter_cache or args.prefix_store_path
         if adapter_cache_path:
             self.adapter_store = AdapterStore(
                 cache_path=adapter_cache_path,
-                adapters={}
+                adapters={},
+                enabled_adapters=enabled_adapters
             )
         monkey_patch_prompt_adapter()
 

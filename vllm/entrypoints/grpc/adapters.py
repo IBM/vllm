@@ -6,8 +6,9 @@ import dataclasses
 import json
 import os
 import re
+from enum import Enum
 from pathlib import Path
-from typing import Dict, Optional, Union
+from typing import Dict, Optional, Union, Set
 
 import torch
 
@@ -30,11 +31,17 @@ class AdapterMetadata:
     full_config: Dict  # The loaded adapter_config.json dict
 
 
+class PeftTypes(str, Enum):
+    LORA = "LORA"
+    PROMPT_TUNING = "PROMPT_TUNING"
+
+
 @dataclasses.dataclass
 class AdapterStore:
     cache_path: str  # Path to local store of adapters to load from
     adapters: Dict[str, AdapterMetadata]
     next_unique_id: int = 1
+    enabled_adapters: Set[PeftTypes] = dataclasses.field(default_factory=set)
 
 
 async def validate_adapters(
@@ -54,7 +61,7 @@ async def validate_adapters(
         adapter_id = request.prefix_id
 
     if adapter_id and not adapter_store:
-        TGISValidationError.AdaptersDisabled.error()
+        TGISValidationError.NoAdapterStoreConfigured.error()
 
     if not adapter_id or not adapter_store:
         return {}
@@ -84,12 +91,17 @@ async def validate_adapters(
         adapter_store.adapters[adapter_id] = adapter_metadata
 
     # Build the proper vllm request object
-    if adapter_metadata.adapter_type == "LORA":
+    if adapter_metadata.adapter_type == PeftTypes.LORA:
+        if PeftTypes.LORA not in adapter_store.enabled_adapters:
+            TGISValidationError.AdaptersDisabled.error("lora", "--enable-lora")
         lora_request = LoRARequest(lora_name=adapter_id,
                                    lora_int_id=adapter_metadata.unique_id,
                                    lora_local_path=adapter_metadata.full_path)
         return {"lora_request": lora_request}
-    elif adapter_metadata.adapter_type == "PROMPT_TUNING":
+    elif adapter_metadata.adapter_type == PeftTypes.PROMPT_TUNING:
+        if PeftTypes.PROMPT_TUNING not in adapter_store.enabled_adapters:
+            TGISValidationError.AdaptersDisabled.error("prompt_tuning", "--enable-prompt-adapter")
+
         print("\n\n PROMPT TUNING!!!!! \n\n")
         prompt_adapter_request = PromptAdapterRequest(
             prompt_adapter_id=adapter_metadata.unique_id,

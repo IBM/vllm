@@ -23,6 +23,9 @@ def from_local_checkpoint(cls,
         prompt_embedding = adapters_weights["prompt_embeddings"].half()
     elif os.path.exists(decoder_pt_path):
         # if no PEFT adapter found, load caikit-style adapter from path
+
+        print("\n\n ~~~~ DECODER.PT LOADING ~~~ \n\n")
+
         prompt_embedding = torch.load(decoder_pt_path,
                                       weights_only=True,
                                       map_location=torch_device).half()

@@ -134,6 +134,7 @@ class PromptAdapterModelManager(AdapterModelManager):
 
     @property
     def deactivate_prompt_adapter(self):
+        print("\n\n ~~~ DEACTIVATING ADAPTER ~~~ \n\n")
         return self.deactivate_adapter
 
     def _add_prompt_adapter(self, prompt_adapter: PromptAdapterModel):
