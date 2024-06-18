@@ -38,9 +38,6 @@ class PromptAdapterModel(AdapterModel):
                               adapter_model_and_path,
                               prompt_adapter_id,
                               torch_device='cuda') -> "PromptAdapterModel":
-
-        print("\n\n~~~~ SAD ~~~~~\n\n")
-
         adapters_weights = load_peft_weights(adapter_model_and_path,
                                              torch_device)
         prompt_embedding = adapters_weights["prompt_embeddings"].half()
@@ -134,7 +131,6 @@ class PromptAdapterModelManager(AdapterModelManager):
 
     @property
     def deactivate_prompt_adapter(self):
-        print("\n\n ~~~ DEACTIVATING ADAPTER ~~~ \n\n")
         return self.deactivate_adapter
 
     def _add_prompt_adapter(self, prompt_adapter: PromptAdapterModel):

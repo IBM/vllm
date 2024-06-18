@@ -173,8 +173,6 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
 
         adapter_kwargs = await self._validate_adapters(request, context)
 
-        print(f"\n\n ~~~ ADAPTER KWARGS {adapter_kwargs} ~~~ \n\n")
-
         for i, req in enumerate(request.requests):
             input_ids, max_is_token_limit[i]\
                 = await self._validate_prompt_and_tokenize(

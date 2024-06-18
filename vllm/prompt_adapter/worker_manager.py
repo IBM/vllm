@@ -148,9 +148,6 @@ class LRUCacheWorkerPromptAdapterManager(WorkerPromptAdapterManager):
 
     def _apply_adapters(
             self, prompt_adapter_requests: Set[PromptAdapterRequest]) -> None:
-
-        print(f"\n\n ~~~ APPLYING ADAPTERS ~~~ \n\t\t{prompt_adapter_requests}\n\n")
-
         prompt_adapters_map = {
             prompt_adapter_request.prompt_adapter_id: prompt_adapter_request
             for prompt_adapter_request in prompt_adapter_requests

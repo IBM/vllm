@@ -42,9 +42,6 @@ class VocabParallelEmbeddingWithPromptAdapter(nn.Module):
         self.indices = base_indices
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-
-        print("\n\n ~~~ PA FORWARD FOR VocabParallelEmbeddings ~~~ \n\n")
-
         hidden_states = self.base_layer(x)
         unique_indices = numpy.unique(self.indices)
         for idx in unique_indices:
@@ -52,10 +49,8 @@ class VocabParallelEmbeddingWithPromptAdapter(nn.Module):
                 pa_idx = self.embedding_tensors[idx].prompt_embedding
                 mask = (self.indices == idx)
                 try:
-                    print("In try block")
                     n_adapters = sum(mask) // pa_idx.shape[0]
                     hidden_states[mask] = pa_idx.repeat(n_adapters, 1)
                 except Exception as e:
-                    print(f"passing exception {e}")
                     pass
         return hidden_states
