@@ -43,6 +43,8 @@ from vllm.tgis_utils.logits_processors import (ExpDecayLengthPenaltyWarper,
                                                TypicalLogitsWarperWrapper)
 from vllm.tgis_utils.metrics import (FailureReasonLabel, ServiceMetrics,
                                      TGISStatLogger)
+from vllm.tracing import (contains_trace_headers, extract_trace_headers,
+                          log_tracing_disabled_warning)
 from vllm.transformers_utils.tokenizer_group import BaseTokenizerGroup
 
 logger = init_logger(__name__)
@@ -168,12 +170,20 @@ class TextGenerationService(generation_pb2_grpc.GenerationServiceServicer):
                 prompt=req.text,
                 prompt_token_ids=input_ids
             )
+            is_tracing_enabled = await self.engine.is_tracing_enabled()
+            headers = dict(context.invocation_metadata())
+            trace_headers = None
+            if is_tracing_enabled:
+                trace_headers = extract_trace_headers(headers)
+            if not is_tracing_enabled and contains_trace_headers(headers):
+                log_tracing_disabled_warning()
             generators.append(
                 # prompt is supplied for observability, the text is not
                 # re-tokenized when `prompt_token_ids` is supplied
                 self.engine.generate(inputs=inputs,
                                      sampling_params=sampling_params,
                                      request_id=f"{request_id}-{i}",
+                                     trace_headers=trace_headers,
                                      **adapter_kwargs),
             )
 
