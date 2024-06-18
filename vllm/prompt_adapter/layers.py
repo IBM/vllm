@@ -51,6 +51,6 @@ class VocabParallelEmbeddingWithPromptAdapter(nn.Module):
                 try:
                     n_adapters = sum(mask) // pa_idx.shape[0]
                     hidden_states[mask] = pa_idx.repeat(n_adapters, 1)
-                except Exception:
+                except Exception as e:
                     pass
         return hidden_states
