@@ -32,14 +32,20 @@
     export JAEGER_IP=$(docker inspect   --format '{{ .NetworkSettings.IPAddress }}' jaeger)
     export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=grpc://$JAEGER_IP:4317
     ```
-    Then set vLLM's service name for OpenTelemetry, enable insecure connections to Jaeger and run vLLM:
+    Then set vLLM's service name for OpenTelemetry, enable insecure connections to Jaeger and run vLLM with the OpenAI endpoint:
     ```
     export OTEL_SERVICE_NAME="vllm-server"
     export OTEL_EXPORTER_OTLP_TRACES_INSECURE=true
     python -m vllm.entrypoints.openai.api_server --model="facebook/opt-125m" --otlp-traces-endpoint="$OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
     ```
+    or run vLLM with the grpc endpoint:
+    ```
+    export OTEL_SERVICE_NAME="vllm-server"
+    export OTEL_EXPORTER_OTLP_TRACES_INSECURE=true
+    python -m vllm.entrypoints.openai.api_server --model="facebook/opt-125m" --otlp-traces-endpoint="$OTEL_EXPORTER_OTLP_TRACES_ENDPOINT" --grpc-port 50051
+    ```
 
-1. In a new shell, send requests with trace context from a dummy client
+1. In a new shell, send requests with trace context from a dummy http client
     ```
     export JAEGER_IP=$(docker inspect --format '{{ .NetworkSettings.IPAddress }}' jaeger)
     export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=grpc://$JAEGER_IP:4317
@@ -47,6 +53,15 @@
     export OTEL_SERVICE_NAME="client-service"
     python dummy_client.py
     ```
+    or a dummy grpc client:
+    ```
+    export JAEGER_IP=$(docker inspect --format '{{ .NetworkSettings.IPAddress }}' jaeger)
+    export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=grpc://$JAEGER_IP:4317
+    export OTEL_EXPORTER_OTLP_TRACES_INSECURE=true
+    export OTEL_SERVICE_NAME="client-service"
+    python dummy_client_grpc.py
+    ```
+
 
 1. Open Jaeger webui: http://localhost:16686/
 
