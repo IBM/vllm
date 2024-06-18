@@ -210,12 +210,12 @@ COPY --link vllm vllm
 # Comment if building *.so files from scratch
 ##################################################
 # Copy the prebuilt *.so files
-COPY --from=prebuilt-wheel --link /workspace/vllm/*.so /workspace/vllm/
-ENV VLLM_USE_PRECOMPILED=1
+#COPY --from=prebuilt-wheel --link /workspace/vllm/*.so /workspace/vllm/
+#ENV VLLM_USE_PRECOMPILED=1
 ##################################################
 # Comment if not building .so files from scratch
-#RUN microdnf install -y git \
-#    && microdnf clean all
+RUN microdnf install -y git \
+    && microdnf clean all
 ##################################################
 
 # Copy over the generated *.pb2 files
