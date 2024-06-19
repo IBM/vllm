@@ -1,6 +1,5 @@
 import asyncio
 import concurrent.futures
-from copy import copy
 from re import escape as regex_escape
 from typing import Tuple, Union
 
@@ -30,7 +29,7 @@ async def get_outlines_guided_decoding_logits_processor(
             concurrent.futures.ThreadPoolExecutor(max_workers=2))
     loop = asyncio.get_running_loop()
 
-    result = await loop.run_in_executor(
+    return await loop.run_in_executor(
         outlines_decoding.global_thread_pool,
         _get_logits_processor,
         guide,
@@ -38,11 +37,6 @@ async def get_outlines_guided_decoding_logits_processor(
         mode,
         None,  # guided_whitespace_pattern - TBD
     )
-
-    logits_processor = copy(result)
-    # reset logits processor's internal state
-    logits_processor.init_state()
-    return logits_processor
 
 
 def _get_guide_and_mode(
