@@ -197,7 +197,7 @@ if __name__ == "__main__":
                         "output length from the dataset.")
     parser.add_argument("--model",
                         type=str,
-                        default="meta-llama/Llama-2-7b-hf")
+                        default="facebook/Llama-2-7b-hf")
     parser.add_argument("--tokenizer", type=str, default=None)
     parser.add_argument('--quantization',
                         '-q',
