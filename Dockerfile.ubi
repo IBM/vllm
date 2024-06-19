@@ -2,7 +2,7 @@
 # docs/source/dev/dockerfile-ubi/dockerfile-ubi.rst
 
 ## Global Args #################################################################
-ARG BASE_UBI_IMAGE_TAG=9.4-949.1714662671
+ARG BASE_UBI_IMAGE_TAG=9.4-1134
 ARG PYTHON_VERSION=3.11
 
 # NOTE: This setting only has an effect when not using prebuilt-wheel kernels
