@@ -450,17 +450,15 @@ class LLMEngine:
 
         return self.tokenizer.get_lora_tokenizer(lora_request).eos_token_id
 
-<<<<<<< HEAD
     def _add_processed_request(
-        self,
-        request_id: str,
-        processed_inputs: LLMInputs,
-        params: Union[SamplingParams, PoolingParams],
-        arrival_time: float,
-        lora_request: Optional[LoRARequest],
-        trace_headers: Optional[Dict[str, str]] = None,
-        priority: int = 0
-    ) -> None:
+            self,
+            request_id: str,
+            processed_inputs: LLMInputs,
+            params: Union[SamplingParams, PoolingParams],
+            arrival_time: float,
+            lora_request: Optional[LoRARequest],
+            trace_headers: Optional[Dict[str, str]] = None,
+            sched_metadata: Optional[Dict[str, Optional[int]]] = None) -> None:
         # Create the sequences.
         block_size = self.cache_config.block_size
         seq_id = next(self.seq_counter)
@@ -478,7 +476,7 @@ class LLMEngine:
                 arrival_time=arrival_time,
                 lora_request=lora_request,
                 trace_headers=trace_headers,
-                priority=priority
+                sched_metadata=sched_metadata)
         elif isinstance(params, PoolingParams):
             seq_group = self._create_sequence_group_with_pooling(
                 request_id,
@@ -486,7 +484,7 @@ class LLMEngine:
                 params,
                 arrival_time=arrival_time,
                 lora_request=lora_request,
-                priority=priority)
+                sched_metadata=sched_metadata)
         else:
             raise ValueError(
                 "Either SamplingParams or PoolingParams must be provided.")
@@ -518,15 +516,14 @@ class LLMEngine:
                          multi_modal_data=inputs.get("multi_modal_data"))
 
     def add_request(
-        self,
-        request_id: str,
-        inputs: PromptInputs,
-        params: Union[SamplingParams, PoolingParams],
-        arrival_time: Optional[float] = None,
-        lora_request: Optional[LoRARequest] = None,
-        trace_headers: Optional[Dict[str, str]] = None,
-        priority: int = None
-    ) -> None:
+            self,
+            request_id: str,
+            inputs: PromptInputs,
+            params: Union[SamplingParams, PoolingParams],
+            arrival_time: Optional[float] = None,
+            lora_request: Optional[LoRARequest] = None,
+            trace_headers: Optional[Dict[str, str]] = None,
+            sched_metadata: Optional[Dict[str, Optional[int]]] = None) -> None:
         """Add a request to the engine's request pool.
 
         The request is added to the request pool and will be processed by the
@@ -579,15 +576,13 @@ class LLMEngine:
                                                      inputs=inputs,
                                                      lora_request=lora_request)
 
-        self._add_processed_request(
-            request_id=request_id,
-            processed_inputs=processed_inputs,
-            params=params,
-            arrival_time=arrival_time,
-            lora_request=lora_request,
-            trace_headers=trace_headers,
-            priority=priority
-        )
+        self._add_processed_request(request_id=request_id,
+                                    processed_inputs=processed_inputs,
+                                    params=params,
+                                    arrival_time=arrival_time,
+                                    lora_request=lora_request,
+                                    trace_headers=trace_headers,
+                                    sched_metadata=sched_metadata)
 
     def _create_sequence_group_with_sampling(
         self,
@@ -597,7 +592,7 @@ class LLMEngine:
         arrival_time: float,
         lora_request: Optional[LoRARequest],
         trace_headers: Optional[Dict[str, str]] = None,
-        priority: int = 0,
+        sched_metadata: Optional[Dict[str, Optional[int]]] = None,
     ) -> SequenceGroup:
         """Creates a SequenceGroup with SamplingParams."""
         max_logprobs = self.get_model_config().max_logprobs
@@ -619,14 +614,13 @@ class LLMEngine:
             self.generation_config_fields)
 
         # Create the sequence group.
-        seq_group = SequenceGroup(
-            request_id=request_id,
-            seqs=[seq],
-            arrival_time=arrival_time,
-            sampling_params=sampling_params,
-            lora_request=lora_request,
-            trace_headers=trace_headers,
-            priority=priority)
+        seq_group = SequenceGroup(request_id=request_id,
+                                  seqs=[seq],
+                                  arrival_time=arrival_time,
+                                  sampling_params=sampling_params,
+                                  lora_request=lora_request,
+                                  trace_headers=trace_headers,
+                                  sched_metadata=sched_metadata)
 
         return seq_group
 
@@ -637,7 +631,7 @@ class LLMEngine:
         pooling_params: PoolingParams,
         arrival_time: float,
         lora_request: Optional[LoRARequest],
-        priority: int = 0,
+        sched_metadata: Optional[Dict[str, Optional[int]]],
     ) -> SequenceGroup:
         """Creates a SequenceGroup with PoolingParams."""
         # Defensive copy of PoolingParams, which are used by the pooler
@@ -648,7 +642,7 @@ class LLMEngine:
                                   arrival_time=arrival_time,
                                   lora_request=lora_request,
                                   pooling_params=pooling_params,
-                                  priority=priority)
+                                  sched_metadata=sched_metadata)
         return seq_group
 
     def abort_request(self, request_id: Union[str, Iterable[str]]) -> None:

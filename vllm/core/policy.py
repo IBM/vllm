@@ -25,6 +25,13 @@ class Policy:
                 reverse=True,
             ))
 
+    def compare_priority(self, now: float, seq1: SequenceGroup,
+                         seq2: SequenceGroup) -> bool:
+        return self.get_priority(now, seq1) < self.get_priority(now, seq2)
+
+    def forces_preemption(self) -> bool:
+        raise NotImplementedError
+
 
 class FCFS(Policy):
 
@@ -35,6 +42,9 @@ class FCFS(Policy):
     ) -> Tuple[float, ...]:
         return (now - seq_group.metrics.arrival_time)
 
+    def forces_preemption(self) -> bool:
+        return True
+
 
 class SP(Policy):
 
@@ -43,7 +53,11 @@ class SP(Policy):
         now: float,
         seq_group: SequenceGroup,
     ) -> Tuple[float, ...]:
-        return (-seq_group.priority, now - seq_group.metrics.arrival_time)
+        return (-seq_group.sched_metadata["priority"],
+                now - seq_group.metrics.arrival_time)
+
+    def forces_preemption(self) -> bool:
+        return True
 
 
 class PolicyFactory:

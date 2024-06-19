@@ -432,13 +432,13 @@ class Scheduler:
 
                 if running_queue:
                     # Preempt the lowest-priority sequence groups.
-                    vseq_group = running_queue.pop()
-                    preempted_mode = self._preempt(vseq_group,
+                    victim_seq_group = running_queue.pop()
+                    preempted_mode = self._preempt(victim_seq_group,
                                                    blocks_to_swap_out)
                     if preempted_mode == PreemptionMode.RECOMPUTE:
-                        preempted.append(vseq_group)
+                        preempted.append(victim_seq_group)
                     else:
-                        swapped_out.append(vseq_group)
+                        swapped_out.append(victim_seq_group)
                 else:
                     # No other sequence groups can be preempted.
                     # Preempt the current sequence group.
@@ -637,6 +637,7 @@ class Scheduler:
                 when any requests are scheduled.
             curr_loras: Currently batched lora request ids. The argument is
                 in-place updated when any requests are scheduled.
+            policy: Scheduling policy for the waiting queue
             enable_chunking: If True, seq group can be chunked and only a
                 chunked number of tokens are scheduled  if
                 `budget.num_batched_tokens` has not enough capacity to schedule
@@ -742,6 +743,7 @@ class Scheduler:
         self,
         waiting_queue: deque,
         running_queue: deque,
+        policy: Policy,
         prefills: SchedulerPrefillOutputs,
         budget: SchedulingBudget,
     ) -> Tuple[deque, deque, SchedulerPrefillOutputs, int]:
@@ -751,6 +753,7 @@ class Scheduler:
         Args:
             waiting_queue: The queue that contains prefill requests.
             running_queue: The queue that contains currently running requests.
+            policy: Scheduling policy for sorting waiting and running queues.
             prefills: Prefill outputs from _schedule_prefills that
                 are modified based on preemptions.
             budget: The scheduling budget. The argument is in-place updated
@@ -778,9 +781,14 @@ class Scheduler:
                                                       SequenceStatus.WAITING,
                                                       False, budget)
 
+            now = time.time()
+
             # Eviction not required as priorities are balanced
-            if seq_group.priority >= running_queue[-1].priority:
+            if policy.compare_priority(now, seq_group, running_queue[-1]):
                 break
+
+            import pdb
+            pdb.set_trace()
 
             while True:
                 can_allocate = self.block_manager.can_allocate(seq_group)
@@ -803,7 +811,7 @@ class Scheduler:
                     #Preempt out the victim sequence group
                     self._preempt(vseq_group, blocks_to_swap_out,
                                   PreemptionMode.RECOMPUTE)
-                    waiting_queue.extendleft(vseq_group)
+                    waiting_queue.extendleft([vseq_group])
                     force_preemption_cnt += 1
 
                 else:
@@ -867,10 +875,10 @@ class Scheduler:
                 enable_chunking=False)
 
         force_preempted = 0
-        if self.scheduler_config.policy == "sp":
+        if policy.forces_preemption():
             remaining_waiting, remaining_running, \
                     prefills, force_preempted = self._schedule_force_preemption(
-                remaining_waiting, remaining_running, prefills, budget)
+                remaining_waiting, remaining_running, policy, prefills, budget)
 
         # Don't schedule decodes if prefills are scheduled.
         # NOTE: If `_schedule_prefills` doesn't enable chunking, self.running

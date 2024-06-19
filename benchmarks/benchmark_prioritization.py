@@ -5,10 +5,7 @@ import random
 import time
 from typing import List, Optional, Tuple
 
-import torch
-from tqdm import tqdm
-from transformers import (AutoModelForCausalLM, AutoTokenizer,
-                          PreTrainedTokenizerBase)
+from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
 from vllm.model_executor.layers.quantization import QUANTIZATION_METHODS
 
@@ -56,7 +53,7 @@ def sample_requests(
             continue
 
         #Select a equi-probable random priority
-        priority = 0 if random.random()<0.5 else 1
+        priority = 0 if random.random() < 0.5 else 1
 
         filtered_dataset.append((prompt, prompt_len, output_len, priority))
 
@@ -110,10 +107,10 @@ def run_vllm(
     # Add the requests to the engine.
     prompts = []
     sampling_params = []
-    priorities = []
+    sched_metadata = []
     for prompt, _, output_len, priority in requests:
         prompts.append(prompt)
-        priorities.append(priority)
+        sched_metadata.append({"priority": priority})
         sampling_params.append(
             SamplingParams(
                 n=n,
@@ -125,7 +122,10 @@ def run_vllm(
             ))
 
     start = time.perf_counter()
-    llm.generate(prompts, sampling_params, priorities =priorities, use_tqdm=True)
+    llm.generate(prompts,
+                 sampling_params,
+                 sched_metadata=sched_metadata,
+                 use_tqdm=True)
     end = time.perf_counter()
     return end - start
 
@@ -195,7 +195,9 @@ if __name__ == "__main__":
                         default=None,
                         help="Output length for each request. Overrides the "
                         "output length from the dataset.")
-    parser.add_argument("--model", type=str, default="meta-llama/Llama-2-7b-hf")
+    parser.add_argument("--model",
+                        type=str,
+                        default="meta-llama/Llama-2-7b-hf")
     parser.add_argument("--tokenizer", type=str, default=None)
     parser.add_argument('--quantization',
                         '-q',
@@ -212,10 +214,6 @@ if __name__ == "__main__":
                         default=200,
                         help="Number of prompts to process.")
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--hf-max-batch-size",
-                        type=int,
-                        default=None,
-                        help="Maximum batch size for HF backend.")
     parser.add_argument('--trust-remote-code',
                         action='store_true',
                         help='trust remote code from huggingface')
@@ -289,7 +287,7 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help='Path to save the throughput results in JSON format.')
-    
+
     parser.add_argument(
         '--scheduling-policy',
         type=bool,
@@ -304,9 +302,5 @@ if __name__ == "__main__":
         assert args.output_len is not None
     else:
         assert args.input_len is None
-
-    if args.backend == "vllm":
-        if args.hf_max_batch_size is not None:
-            raise ValueError("HF max batch size is only for HF backend.")
 
     main(args)
