@@ -651,7 +651,6 @@ class Scheduler:
         # We don't sort waiting queue because we assume it is sorted.
         # Copy the queue so that the input queue is not modified.
 
-
         if policy.sort_waiting():
             now = time.time()
             waiting_queue = policy.sort_by_priority(now, waiting_queue)
@@ -746,7 +745,7 @@ class Scheduler:
         running_queue: deque,
         policy: Policy,
         budget: SchedulingBudget,
-    ) -> Tuple[deque, deque, SchedulerPrefillOutputs, int]:
+    ) -> Tuple[deque, deque, int]:
         """Force preempt requests from the running queue
         if their priority is lower.
 
@@ -775,9 +774,10 @@ class Scheduler:
                                                       False, budget)
 
             now = time.time()
-            
+
             # Only preempt if priority inversion exists
-            while running_queue and not policy.compare_priority(now, seq_group, running_queue[-1]):
+            while running_queue and not policy.compare_priority(
+                    now, seq_group, running_queue[-1]):
                 #Only preempt if waiting sequence cannot be allocated
                 can_allocate = self.block_manager.can_allocate(seq_group)
                 if (num_new_tokens == 0 or
@@ -852,7 +852,7 @@ class Scheduler:
 
         force_preempted = 0
 
-        if len(prefills.seq_groups)==0 and policy.forces_preemption():
+        if len(prefills.seq_groups) == 0 and policy.forces_preemption():
             remaining_waiting, remaining_running, \
                     force_preempted = self._schedule_force_preemption(
                 remaining_waiting, remaining_running, policy, budget)
