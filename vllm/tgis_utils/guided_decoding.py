@@ -1,6 +1,5 @@
 import asyncio
 import concurrent.futures
-from copy import copy
 from re import escape as regex_escape
 from typing import Tuple, Union
 
