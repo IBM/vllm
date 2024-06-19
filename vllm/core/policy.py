@@ -32,6 +32,9 @@ class Policy:
     def forces_preemption(self) -> bool:
         raise NotImplementedError
 
+    def sort_waiting(self) -> bool:
+        raise NotImplementedError
+
 
 class FCFS(Policy):
 
@@ -43,7 +46,10 @@ class FCFS(Policy):
         return (now - seq_group.metrics.arrival_time)
 
     def forces_preemption(self) -> bool:
-        return True
+        return False
+
+    def sort_waiting(self) -> bool:
+        return False
 
 
 class SP(Policy):
@@ -57,6 +63,9 @@ class SP(Policy):
                 now - seq_group.metrics.arrival_time)
 
     def forces_preemption(self) -> bool:
+        return True
+
+    def sort_waiting(self) -> bool:
         return True
 
 
