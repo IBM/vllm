@@ -757,22 +757,17 @@ class Scheduler:
             A tuple of remaining waiting_queue, extended running_queue,
             and count of forced preemptions.
         """
-
         blocks_to_swap_out: List[Tuple[int, int]] = []
-
         force_preemption_cnt = 0
-
+        
         if waiting_queue:
-
             seq_group = waiting_queue[0]
             waiting_queue.popleft()
             num_new_seqs = seq_group.get_max_num_running_seqs()
             num_new_tokens = self._get_num_new_tokens(seq_group,
                                                       SequenceStatus.WAITING,
                                                       False, budget)
-
             now = time.time()
-
             # Only preempt if priority inversion exists
             while running_queue and not policy.compare_priority(
                     now, seq_group, running_queue[-1]):
@@ -798,7 +793,6 @@ class Scheduler:
                                   PreemptionMode.RECOMPUTE)
                     waiting_queue.appendleft(vseq_group)
                     force_preemption_cnt += 1
-
                 else:
                     break
 
