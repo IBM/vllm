@@ -621,7 +621,6 @@ class Scheduler:
         enable_chunking: bool = False,
     ) -> Tuple[deque, SchedulerPrefillOutputs]:
         """Schedule sequence groups that are in prefill stage.
-
         Note that the current scheduler treats PREEMPTED_FOR_RECOMPUTE
         as a new prefill (that starts from beginning -> most recently generated
         tokens).
@@ -652,8 +651,10 @@ class Scheduler:
         # We don't sort waiting queue because we assume it is sorted.
         # Copy the queue so that the input queue is not modified.
 
-        now = time.time()
-        waiting_queue = policy.sort_by_priority(now, waiting_queue)
+
+        if policy.sort_waiting():
+            now = time.time()
+            waiting_queue = policy.sort_by_priority(now, waiting_queue)
 
         waiting_queue = deque([s for s in waiting_queue])
 
@@ -744,7 +745,6 @@ class Scheduler:
         waiting_queue: deque,
         running_queue: deque,
         policy: Policy,
-        prefills: SchedulerPrefillOutputs,
         budget: SchedulingBudget,
     ) -> Tuple[deque, deque, SchedulerPrefillOutputs, int]:
         """Force preempt requests from the running queue
@@ -754,45 +754,32 @@ class Scheduler:
             waiting_queue: The queue that contains prefill requests.
             running_queue: The queue that contains currently running requests.
             policy: Scheduling policy for sorting waiting and running queues.
-            prefills: Prefill outputs from _schedule_prefills that
-                are modified based on preemptions.
             budget: The scheduling budget. The argument is in-place updated
                 when any requests are scheduled.
         Returns:
             A tuple of remaining waiting_queue, extended running_queue,
-            updated SchedulerPrefillOutputs, and count of forced preemptions.
+            and count of forced preemptions.
         """
 
         blocks_to_swap_out: List[Tuple[int, int]] = []
 
-        seq_groups = prefills.seq_groups
-        ignored_seq_groups = prefills.ignored_seq_groups
-
         force_preemption_cnt = 0
 
-        while waiting_queue:
-            if not running_queue:
-                break
+        if waiting_queue:
 
             seq_group = waiting_queue[0]
-
+            waiting_queue.popleft()
             num_new_seqs = seq_group.get_max_num_running_seqs()
             num_new_tokens = self._get_num_new_tokens(seq_group,
                                                       SequenceStatus.WAITING,
                                                       False, budget)
 
             now = time.time()
-
-            # Eviction not required as priorities are balanced
-            if policy.compare_priority(now, seq_group, running_queue[-1]):
-                break
-
-            import pdb
-            pdb.set_trace()
-
-            while True:
+            
+            # Only preempt if priority inversion exists
+            while running_queue and not policy.compare_priority(now, seq_group, running_queue[-1]):
+                #Only preempt if waiting sequence cannot be allocated
                 can_allocate = self.block_manager.can_allocate(seq_group)
-                #Use schedule_prefills logic for forced preemption
                 if (num_new_tokens == 0 or
                         not budget.can_schedule(num_new_tokens=num_new_tokens,
                                                 num_new_seqs=num_new_seqs)
@@ -805,33 +792,22 @@ class Scheduler:
                     budget.subtract_num_batched_tokens(vseq_group.request_id,
                                                        num_running_tokens)
                     num_running_seqs = vseq_group.get_max_num_running_seqs()
-                    budget.subtract_num_seqs(seq_group.request_id,
+                    budget.subtract_num_seqs(vseq_group.request_id,
                                              num_running_seqs)
 
                     #Preempt out the victim sequence group
                     self._preempt(vseq_group, blocks_to_swap_out,
                                   PreemptionMode.RECOMPUTE)
-                    waiting_queue.extendleft([vseq_group])
+                    waiting_queue.appendleft(vseq_group)
                     force_preemption_cnt += 1
 
                 else:
-                    self._allocate_and_set_running(seq_group)
-                    seq_groups.append(
-                        ScheduledSequenceGroup(
-                            seq_group=seq_group,
-                            token_chunk_size=num_new_tokens))
-                    budget.add_num_batched_tokens(seq_group.request_id,
-                                                  num_new_tokens)
-                    budget.add_num_seqs(seq_group.request_id, num_new_seqs)
-                    waiting_queue.popleft()
                     break
 
-        return (waiting_queue, running_queue,
-                SchedulerPrefillOutputs(
-                    seq_groups=seq_groups,
-                    ignored_seq_groups=ignored_seq_groups,
-                    num_lookahead_slots=self._get_num_lookahead_slots(
-                        is_prefill=True)), force_preemption_cnt)
+            #Put the sequence back into the waiting queue
+            waiting_queue.appendleft(seq_group)
+
+        return (waiting_queue, running_queue, force_preemption_cnt)
 
     def _schedule_default(self) -> SchedulerOutputs:
         """Schedule queued requests.
@@ -875,10 +851,11 @@ class Scheduler:
                 enable_chunking=False)
 
         force_preempted = 0
-        if policy.forces_preemption():
+
+        if len(prefills.seq_groups)==0 and policy.forces_preemption():
             remaining_waiting, remaining_running, \
-                    prefills, force_preempted = self._schedule_force_preemption(
-                remaining_waiting, remaining_running, policy, prefills, budget)
+                    force_preempted = self._schedule_force_preemption(
+                remaining_waiting, remaining_running, policy, budget)
 
         # Don't schedule decodes if prefills are scheduled.
         # NOTE: If `_schedule_prefills` doesn't enable chunking, self.running
