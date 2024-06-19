@@ -284,7 +284,6 @@ class LLM:
                 "(XForCausalLM).")
 
         if prompt_token_ids is not None:
-            print(prompt_token_ids)
             inputs = self._convert_v1_inputs(
                 prompts=cast(Optional[Union[str, List[str]]], prompts),
                 prompt_token_ids=prompt_token_ids,

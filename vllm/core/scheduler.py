@@ -407,9 +407,7 @@ class Scheduler:
         # In this case, the policy is responsible for deciding which sequence
         # groups to preempt.
         now = time.time()
-
         running_queue = policy.sort_by_priority(now, running_queue)
-
         while running_queue:
             seq_group = running_queue[0]
             num_running_tokens = self._get_num_new_tokens(
@@ -1280,10 +1278,8 @@ class Scheduler:
         """
         num_new_tokens = 0
         seqs = seq_group.get_seqs(status=status)
-
         for seq in seqs:
             num_new_tokens += seq.get_num_new_tokens()
-
         assert num_new_tokens > 0
         # Chunk if a running request cannot fit in.
         # If number of seq > 1, it means it is doing beam search in a

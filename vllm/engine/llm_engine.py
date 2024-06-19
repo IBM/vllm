@@ -850,7 +850,6 @@ class LLMEngine:
             model_output: Optional, used to emit speculative decoding metrics
                 which are created by the workers.
         """
-
         now = time.time()
 
         # System State
