@@ -301,7 +301,7 @@ ENV HF_HUB_OFFLINE=1 \
     GRPC_PORT=8033 \
     HOME=/home/vllm \
     VLLM_USAGE_SOURCE=production-docker-image \
-    VLLM_WORKER_MULTIPROC_METHOD=fork \
+    VLLM_WORKER_MULTIPROC_METHOD=spawn \
     TRITON_CACHE_MANAGER="triton.runtime.custom_cache_manager:CustomCacheManager"
 
 # setup non-root user for OpenShift
