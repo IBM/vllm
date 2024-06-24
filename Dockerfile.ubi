@@ -163,7 +163,7 @@ RUN microdnf install -y \
 
 ARG PYTHON_VERSION
 # 0.4.2 is built for CUDA 12.1 and PyTorch 2.3.0
-ARG VLLM_WHEEL_VERSION=0.4.3
+ARG VLLM_WHEEL_VERSION=0.5.0.post1
 
 RUN curl -Lo vllm.whl https://github.com/vllm-project/vllm/releases/download/v${VLLM_WHEEL_VERSION}/vllm-${VLLM_WHEEL_VERSION}-cp${PYTHON_VERSION//.}-cp${PYTHON_VERSION//.}-manylinux1_x86_64.whl \
     && unzip vllm.whl \
@@ -277,11 +277,16 @@ ENV VLLM_NCCL_SO_PATH=/usr/local/lib/libnccl.so.2
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip3 install \
         # additional dependencies for the TGIS gRPC server
-        grpcio-tools==1.63.0 \
+        grpcio-tools \
         # additional dependencies for openai api_server
         accelerate==0.30.0 \
         # hf_transfer for faster HF hub downloads
-        hf_transfer==0.1.6
+        hf_transfer==0.1.6 \
+        # additional dependencies for OpenTelemetry tracing
+        opentelemetry-sdk \
+        opentelemetry-api \
+        opentelemetry-exporter-otlp \
+        opentelemetry-semantic-conventions-ai
 
 # Triton needs a CC compiler
 RUN microdnf install -y gcc \
