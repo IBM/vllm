@@ -759,7 +759,7 @@ class Scheduler:
         """
         blocks_to_swap_out: List[Tuple[int, int]] = []
         force_preemption_cnt = 0
-        
+
         if waiting_queue:
             seq_group = waiting_queue[0]
             waiting_queue.popleft()
@@ -773,28 +773,27 @@ class Scheduler:
                     now, seq_group, running_queue[-1]):
                 #Only preempt if waiting sequence cannot be allocated
                 can_allocate = self.block_manager.can_allocate(seq_group)
-                if (num_new_tokens == 0 or
-                        not budget.can_schedule(num_new_tokens=num_new_tokens,
+                if (num_new_tokens > 0
+                        and budget.can_schedule(num_new_tokens=num_new_tokens,
                                                 num_new_seqs=num_new_seqs)
-                        or can_allocate == AllocStatus.LATER):
-
-                    #Adjust budget to remove the victim sequence group
-                    vseq_group = running_queue.pop()
-                    num_running_tokens = self._get_num_new_tokens(
-                        vseq_group, SequenceStatus.RUNNING, False, budget)
-                    budget.subtract_num_batched_tokens(vseq_group.request_id,
-                                                       num_running_tokens)
-                    num_running_seqs = vseq_group.get_max_num_running_seqs()
-                    budget.subtract_num_seqs(vseq_group.request_id,
-                                             num_running_seqs)
-
-                    #Preempt out the victim sequence group
-                    self._preempt(vseq_group, blocks_to_swap_out,
-                                  PreemptionMode.RECOMPUTE)
-                    waiting_queue.appendleft(vseq_group)
-                    force_preemption_cnt += 1
-                else:
+                        and can_allocate == AllocStatus.OK):
                     break
+
+                #Adjust budget to remove the victim sequence group
+                vseq_group = running_queue.pop()
+                num_running_tokens = self._get_num_new_tokens(
+                    vseq_group, SequenceStatus.RUNNING, False, budget)
+                budget.subtract_num_batched_tokens(vseq_group.request_id,
+                                                   num_running_tokens)
+                num_running_seqs = vseq_group.get_max_num_running_seqs()
+                budget.subtract_num_seqs(vseq_group.request_id,
+                                         num_running_seqs)
+
+                #Preempt out the victim sequence group
+                self._preempt(vseq_group, blocks_to_swap_out,
+                              PreemptionMode.RECOMPUTE)
+                waiting_queue.appendleft(vseq_group)
+                force_preemption_cnt += 1
 
             #Put the sequence back into the waiting queue
             waiting_queue.appendleft(seq_group)
