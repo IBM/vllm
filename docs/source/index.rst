@@ -121,6 +121,7 @@ Documentation
    dev/engine/engine_index
    dev/kernel/paged_attention
    dev/dockerfile-ubi/dockerfile-ubi
+   dev/input_processing/model_inputs_index
    dev/multimodal/multimodal_index
    dev/dockerfile/dockerfile
 
