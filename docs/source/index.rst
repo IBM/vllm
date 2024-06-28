@@ -63,6 +63,7 @@ Documentation
 
    getting_started/installation
    getting_started/amd-installation
+   getting_started/openvino-installation
    getting_started/cpu-installation
    getting_started/neuron-installation
    getting_started/tpu-installation
@@ -100,6 +101,7 @@ Documentation
    :maxdepth: 1
    :caption: Quantization
 
+   quantization/supported_hardware
    quantization/auto_awq
    quantization/fp8
    quantization/fp8_e5m2_kvcache
@@ -120,6 +122,7 @@ Documentation
    dev/engine/engine_index
    dev/kernel/paged_attention
    dev/dockerfile-ubi/dockerfile-ubi
+   dev/input_processing/model_inputs_index
    dev/multimodal/multimodal_index
    dev/dockerfile/dockerfile
 
