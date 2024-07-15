@@ -1,4 +1,3 @@
-import argparse
 import asyncio
 import importlib
 import inspect
@@ -31,6 +30,7 @@ from vllm.entrypoints.openai.serving_embedding import OpenAIServingEmbedding
 from vllm.logger import init_logger
 from vllm.tgis_utils.args import add_tgis_args, postprocess_tgis_args
 from vllm.usage.usage_lib import UsageContext
+from vllm.utils import FlexibleArgumentParser
 from vllm.version import __version__ as VLLM_VERSION
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
@@ -89,7 +89,7 @@ async def health() -> Response:
 
 @router.get("/v1/models")
 async def show_available_models():
-    models = await openai_serving_chat.show_available_models()
+    models = await openai_serving_completion.show_available_models()
     return JSONResponse(content=models.model_dump())
 
 
@@ -263,8 +263,7 @@ def run_server(args, llm_engine=None):
 if __name__ == "__main__":
     # NOTE(simon):
     # This section should be in sync with vllm/scripts.py for CLI entrypoints.
-
-    parser = argparse.ArgumentParser(
+    parser = FlexibleArgumentParser(
         description="vLLM OpenAI-Compatible RESTful API server.")
     parser = make_arg_parser(parser)
     parser = add_tgis_args(parser)

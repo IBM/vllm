@@ -3,7 +3,6 @@ import subprocess
 import sys
 import time
 import warnings
-from argparse import ArgumentParser
 from contextlib import contextmanager
 from typing import List
 
@@ -14,7 +13,7 @@ import requests
 from vllm.distributed import (ensure_model_parallel_initialized,
                               init_distributed_environment)
 from vllm.entrypoints.openai.cli_args import make_arg_parser
-from vllm.utils import get_open_port
+from vllm.utils import FlexibleArgumentParser, get_open_port
 
 # Path to root of repository so that utilities can be imported by ray workers
 VLLM_PATH = os.path.abspath(os.path.join(__file__, os.pardir, os.pardir))
@@ -32,7 +31,10 @@ class RemoteOpenAIServer:
             env = os.environ.copy()
             env["PYTHONUNBUFFERED"] = "1"
             self.proc = subprocess.Popen(
-                ["vllm", "serve", *cli_args],
+                [
+                    sys.executable, "-m", "vllm.entrypoints.openai.api_server",
+                    *cli_args
+                ],
                 env=env,
                 stdout=sys.stdout,
                 stderr=sys.stderr,
@@ -72,7 +74,8 @@ class RemoteOpenAIServer:
 
             cli_args = cli_args + ["--port", str(get_open_port())]
 
-        parser = ArgumentParser(description="vLLM's remote OpenAI server.")
+        parser = FlexibleArgumentParser(
+            description="vLLM's remote OpenAI server.")
         parser = make_arg_parser(parser)
         args = parser.parse_args(cli_args)
         self.host = str(args.host or 'localhost')

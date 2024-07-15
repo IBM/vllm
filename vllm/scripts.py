@@ -10,6 +10,7 @@ from openai import OpenAI
 
 from vllm.entrypoints.openai.api_server import run_server
 from vllm.entrypoints.openai.cli_args import make_arg_parser
+from vllm.utils import FlexibleArgumentParser
 
 
 def registrer_signal_handlers():
@@ -23,10 +24,6 @@ def registrer_signal_handlers():
 
 def serve(args: argparse.Namespace) -> None:
     # EngineArgs expects the model name to be passed as --model.
-    if args.model is not None and args.model == args.model_tag:
-        raise ValueError(
-            "The --model argument is not supported for the serve command. "
-            "Use positional argument [model_tag] instead.")
     args.model = args.model_tag
 
     run_server(args)
@@ -245,7 +242,7 @@ def convert_to_fast_tokenizer(
 
 
 def _add_query_options(
-        parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+        parser: FlexibleArgumentParser) -> FlexibleArgumentParser:
     parser.add_argument(
         "--url",
         type=str,
@@ -269,7 +266,7 @@ def _add_query_options(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="vLLM CLI")
+    parser = FlexibleArgumentParser(description="vLLM CLI")
     subparsers = parser.add_subparsers(required=True)
 
     serve_parser = subparsers.add_parser(

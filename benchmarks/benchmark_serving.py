@@ -2,7 +2,7 @@
 
 On the server side, run one of the following commands:
     vLLM OpenAI API server
-    vllm serve <your_model>
+    vllm serve <your_model> \
         --swap-space 16 \
         --disable-log-requests
 
@@ -17,7 +17,7 @@ On the client side, run:
         --dataset-path <path to dataset> \
         --request-rate <request_rate> \ # By default <request_rate> is inf
         --num-prompts <num_prompts> # By default <num_prompts> is 1000
-        
+
     when using tgi backend, add
         --endpoint /generate_stream
     to the end of the command above.
@@ -43,6 +43,11 @@ try:
     from vllm.transformers_utils.tokenizer import get_tokenizer
 except ImportError:
     from backend_request_func import get_tokenizer
+
+try:
+    from vllm.utils import FlexibleArgumentParser
+except ImportError:
+    from argparse import ArgumentParser as FlexibleArgumentParser
 
 
 @dataclass
@@ -72,7 +77,6 @@ def sample_sharegpt_requests(
 ) -> List[Tuple[str, int, int]]:
     if fixed_output_len is not None and fixed_output_len < 4:
         raise ValueError("output_len too small")
-
     # Load the dataset.
     with open(dataset_path) as f:
         dataset = json.load(f)
@@ -191,6 +195,7 @@ async def get_request(
         if request_rate == float("inf"):
             # If the request rate is infinity, then we don't need to wait.
             continue
+
         # Sample the request interval from the exponential distribution.
         interval = np.random.exponential(1.0 / request_rate)
         # The next request will be sent after the interval.
@@ -214,7 +219,7 @@ def calculate_metrics(
             # We use the tokenizer to count the number of output tokens for all
             # serving backends instead of looking at len(outputs[i].itl) since
             # multiple output tokens may be bundled together
-            # Note: this may inflate the output token count slightly
+            # Note : this may inflate the output token count slightly
             output_len = len(
                 tokenizer(outputs[i].generated_text,
                           add_special_tokens=False).input_ids)
@@ -511,7 +516,7 @@ def main(args: argparse.Namespace):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
+    parser = FlexibleArgumentParser(
         description="Benchmark the online serving throughput.")
     parser.add_argument(
         "--backend",

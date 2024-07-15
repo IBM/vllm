@@ -10,6 +10,7 @@ import ssl
 
 from vllm.engine.arg_utils import AsyncEngineArgs, nullable_str
 from vllm.entrypoints.openai.serving_engine import LoRAModulePath
+from vllm.utils import FlexibleArgumentParser
 
 
 class LoRAParserAction(argparse.Action):
@@ -22,8 +23,7 @@ class LoRAParserAction(argparse.Action):
         setattr(namespace, self.dest, lora_list)
 
 
-def make_arg_parser(
-        parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+def make_arg_parser(parser: FlexibleArgumentParser) -> FlexibleArgumentParser:
     parser.add_argument("--host",
                         type=nullable_str,
                         default=None,
@@ -114,7 +114,7 @@ def make_arg_parser(
     return parser
 
 
-def create_parser_for_docs() -> argparse.ArgumentParser:
-    parser_for_docs = argparse.ArgumentParser(
+def create_parser_for_docs() -> FlexibleArgumentParser:
+    parser_for_docs = FlexibleArgumentParser(
         prog="-m vllm.entrypoints.openai.api_server")
     return make_arg_parser(parser_for_docs)
