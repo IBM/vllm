@@ -120,6 +120,7 @@ COPY vllm vllm
 ENV CCACHE_DIR=/root/.cache/ccache
 RUN --mount=type=cache,target=/root/.cache/ccache \
     --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=bind,target=/workspace/.git \
     env CFLAGS="-march=haswell" \
         CXXFLAGS="$CFLAGS $CXXFLAGS" \
         CMAKE_BUILD_TYPE=Release \
@@ -192,7 +193,7 @@ FROM vllm-openai as vllm-grpc-adapter
 USER root
 
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install vllm-tgis-adapter==0.2.0
+    pip install vllm-tgis-adapter==0.2.1
 
 ENV GRPC_PORT=8033
 USER 2000
