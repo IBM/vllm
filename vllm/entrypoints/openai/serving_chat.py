@@ -124,7 +124,7 @@ class OpenAIServingChat(OpenAIServing):
                 tokenizer,
                 prompt=prompt,
                 add_special_tokens=request.add_special_tokens)
-            sampling_params = request.to_sampling_params()
+            sampling_params = request.to_sampling_params(tokenizer)
             decoding_config = await self.engine.get_decoding_config()
             guided_decoding_backend = request.guided_decoding_backend \
                 or decoding_config.guided_decoding_backend
