@@ -45,6 +45,7 @@ git commit -s --amend # To sign-off the merge commit.
 Fetch the specific PR that needs to be merged into your branch.
 ```bash
 export PR_NUMBER=<PR-number>
+git branch -D ${PR_NUMBER} # Ensure any existing branch with the same name is deleted
 git fetch upstream pull/${PR_NUMBER}/head:${PR_NUMBER}
 ```
 
