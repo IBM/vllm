@@ -1,105 +1,151 @@
-# Git Workflow: Syncing and Merging PRs with Squash
+# Git Workflow: Building the Development Image Release for VLLM
 
-This guide outlines the steps to create a new branch, sync it with upstream changes, and merge pull requests (PRs) using squash commits. The process is flexible and can be applied to various repositories, not just `vllm`.
+This guide outlines the steps to create a new branch, sync it with upstream changes, merge pull requests (PRs) using squash commits, and handle updates from both upstream and ODH repositories. The process is geared towards building the development image release for VLLM, ensuring that each step is clear to avoid common mistakes.
+In the previous process, we used the repository `github.com/ibm/vllm:main` as the base repository, while keeping `odh/vllm:main` as a tracked repository. Now, in this tutorial, we directly use the `odh/vllm:main` repository as the base, bringing in updates from `upstream:main` and merging some necessary PRs to build the current development image.
+
+## Repositories
+- **Upstream Repository**: https://github.com/vllm-project/
+- **ODH Repository (Origin)**: https://github.com/opendatahub-io/vllm
+- **vllm-tgis-adapter** Repository: https://github.com/opendatahub-io/vllm-tgis-adapter
 
 ## Steps
 
 ### 1. **Create a New Branch**
-Before working on new changes or syncing updates, create a new branch from `odh/vllm:main` or another repository branch.
+Clone and create a new branch from `odh/vllm:main`.
 ```bash
+git clone git@github.com:opendatahub-io/vllm.git
+cd vllm
 git checkout -b <new-branch-name>
 ```
-- Make sure you have the latest changes from the main branch before branching off.
+- This branch will be used to prepare the new release.
 
 ### 2. **Add Upstream Repository**
-Add the upstream repository if it’s not already set.
+Ensure you have the upstream repository set to track changes from the VLLM project.
 ```bash
-git remote add upstream https://github.com/<upstream-repo>.git
+git remote add upstream https://github.com/vllm-project/vllm.git
 ```
-- Use the appropriate URL for the upstream repository, which could be `vllm`, or any other related repo.
 
 ### 3. **Fetch Updates from Origin and Upstream**
-Sync your local repository with both `origin` and `upstream`.
+Keep your local repository up-to-date with both `origin` and `upstream`.
 ```bash
 git fetch origin main
 git fetch upstream main
 ```
-- **Tip:** Always ensure your local branch is up to date with the main branch of both `origin` and `upstream`.
 
 ### 4. **Pull the Latest Changes from Upstream**
-Now, pull the latest changes from the upstream repository into your local branch.
+Update your branch with the latest changes from upstream to ensure compatibility and commit them.
 ```bash
+git config pull.rebase false # merging without rebasing to avoid conflicts.
 git pull upstream main
+git commit -s --amend # To sign-off the merge commit. 
 ```
-- **Tip:** If you encounter merge conflicts, carefully resolve them before proceeding.
+**Tip:** We will use this commit hash in changelog documentation.  
 
-### 5. **Check Repository Status**
-Before proceeding with PRs, check the current status of your repository.
-```bash
-git status
-```
-- This helps ensure you don’t have uncommitted changes before fetching a new PR.
-
-### 6. **Fetch the PR from Upstream (or Another Repo)**
-Fetch the PR from the upstream repository or from another source.
+### 5. **Fetch the PR from Upstream**
+Fetch the specific PR that needs to be merged into your branch.
 ```bash
 export PR_NUMBER=<PR-number>
 git fetch upstream pull/${PR_NUMBER}/head:${PR_NUMBER}
 ```
-- **Tip:** Ensure the PR number is correct before fetching.
+
+### 6. **Switch to upstream:main**
+Note that the PR changes will be merged into the `upstream:main` branch before being merged into your working branch.
+```bash
+git checkout upstream/main
+```
 
 ### 7. **Merge the PR with Squash**
-Now, merge the fetched PR using squash to combine all commits into a single commit.
+Combine all commits from the PR into a single commit for a cleaner history.
 ```bash
 git merge --squash ${PR_NUMBER}
-```
-- **Tip:** Use squash to maintain a clean commit history.
-
-### 8. **Commit the Squashed Changes**
-After the squash, commit the changes with a message that reflects the PR.
-```bash
 git commit -s -m "Squash ${PR_NUMBER}"
 ```
-- **Tip:** The `-s` flag signs your commit, which may be required depending on your repository settings.
 
-### 9. **(Optional) Cherry-pick the Squashed Commit**
-If you need to cherry-pick the squashed commit into another branch, use:
+### 8. **Export the Squash Commit Hash**
+Retrieve and store the hash of the squashed commit.
 ```bash
 export SQUASH_HEAD=$(git rev-parse --short HEAD)
+# This command saves the commit hash of the squashed changes for later use.
+```
+
+### 9. **Cherry-Pick the Squashed Commit**
+Mandatory step to apply the changes to the release branch.
+```bash
 git checkout <target-branch>
 git cherry-pick $SQUASH_HEAD
 ```
-- **Tip:** Make sure the target branch is checked out before cherry-picking.
 
-### 10. **Push the Changes to Origin**
-Once the changes are ready, push them to the origin repository.
+**Important Note**: If more PRs need to be added, repeat the loop from steps 5 to 9.
+
+### 10. **Verify the `vllm-tgis-adapter` Version**
+Before proceeding to pull changes into the `ibm-dev` branch, verify the version of `vllm-tgis-adapter` being installed in the `Dockerfile.ubi`. This is a critical step to avoid mismatches during the build.
 ```bash
-git push origin <branch-name>
+# Open the Dockerfile in your preferred text editor
+vim Dockerfile.ubi
+# or use grep:
+grep "vllm-tgis-adapter" Dockerfile.ubi
 ```
-- **Tip:** Use `--force` if necessary (e.g., after an amended commit), but be cautious of overwriting history.
+- The repository for `vllm-tgis-adapter` is located at: https://github.com/opendatahub-io/vllm-tgis-adapter
 
-### 11. **Trigger the Build**
-If the repository (like `odh/vllm:ibm-dev`) is set up with a CI/CD pipeline, pulling the changes to the target branch can trigger a build, which will be monitored via OpenShift logs.
+Ensure the correct version is being installed to avoid issues during the build process.
 
+### 11. **Push the Changes to Origin**
+Push the final changes to trigger the build process.
+Currently, the branch `odh/vllm:ibm-dev` is configured to trigger the `fast-ibm` build.
 ```bash
-# After merging PRs, push to the build branch
-git push origin odh_vllm_release_<date>:odh_vllm_release_<date>
+git push --force origin <target-branch>:ibm-dev
+```
+- The build logs will be available in **Prow** after pushing to `odh/vllm:ibm-dev`.
+
+### 12. **Add a Tag to the Repository**
+After completing the updates and ensuring everything is functioning as expected, tag the last commit.
+```bash
+export LAST_COMMIT=$(git rev-parse --short HEAD)
+git tag fast-ibm-$LAST_COMMIT
+git push origin fast-ibm-$LAST_COMMIT
+```
+- This tag helps identify the build associated with the current release.
+
+## Example Scenarios
+
+### Example 1: Merging a PR from ODH (Origin) Instead of Upstream
+To merge a pull request from the ODH repository instead of the upstream, follow the same loop starting from step 5, with a slight change in the repository used to fetch the PR, replacing `upstream` with `origin`:
+```bash
+git fetch origin pull/${PR_NUMBER}/head:${PR_NUMBER}
 ```
 
-Monitor the logs in OpenShift to ensure the build completes successfully.
+### Example 2: Bring Upstream Updates While Keeping Merged PR Changes
+To bring updates from upstream without losing the changes already merged in your branch, follow these steps:
 
-### 12. **Check Image Availability**
-After the build is complete, the new image will be available on `quay.io`.
+#### 1. **Log the Last Commit**
+Before performing the update, it's a good idea to note the last commit so you can revert if something goes wrong:
+```bash
+git log --oneline
+```
+Copy the hash of the last commit for future reference.
+
+#### 2. **Checkout `upstream:main` and Pull the Latest Changes**
+```bash
+git checkout upstream/main
+git pull upstream main
+```
+
+#### 3. **Merge the Updates into Your Working Branch**
+After pulling the upstream updates, switch back to your working branch and merge them:
+```bash
+git checkout <working-branch>
+git merge upstream/main
+```
+
+#### 4. **Reset if Necessary**
+If anything goes wrong during the merge or pull, you can use the commit hash you copied earlier to reset the branch:
+```bash
+git reset --hard <commit-hash>
+```
+If you want to bring modification from origin instead upstream, you just need to change `upstream` to `origin` in the steps **2.** and **3.** 
 
 ## Tips to Avoid Mistakes
-
-1. **Always double-check your PR number and branch name** before executing `fetch` or `merge` commands.
-2. **Resolve merge conflicts carefully** during the `pull` process to avoid overwriting changes.
-3. **Use squash commits** to maintain a clean history and avoid a cluttered commit log.
-4. **Cherry-pick commits carefully** to avoid unnecessary duplication of changes across branches.
-5. **Monitor the CI/CD pipeline** (such as OpenShift) to ensure the build is completed without issues.
-6. **Be cautious with `--force` push**, as it rewrites the history of the branch.
-
----
-
-This process can be adapted to different repositories by adjusting the remote URLs and PR numbers as needed.
+- **Always double-check PR numbers and branch names** before fetching or merging.
+- **Resolve conflicts attentively** during the pull and merge processes.
+- **Monitor the CI/CD pipeline in Prow** to verify the build and deployment status.
+- **Be cautious with `--force` push**, especially after amending commits or when pushing tags.
