@@ -1,6 +1,7 @@
 # Git Workflow: Building the Development Image Release for VLLM
 
 This guide outlines the steps to create a new branch, sync it with upstream changes, merge pull requests (PRs) using squash commits, and handle updates from both upstream and ODH repositories. The process is geared towards building the development image release for VLLM, ensuring that each step is clear to avoid common mistakes.
+
 In the previous process, we used the repository `github.com/ibm/vllm:main` as the base repository, while keeping `odh/vllm:main` as a tracked repository. Now, in this tutorial, we directly use the `odh/vllm:main` repository as the base, bringing in updates from `upstream:main` and merging some necessary PRs to build the current development image.
 
 ## Repositories
