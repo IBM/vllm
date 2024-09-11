@@ -16,7 +16,8 @@ Clone and create a new branch from `odh/vllm:main`.
 ```bash
 git clone git@github.com:opendatahub-io/vllm.git
 cd vllm
-git checkout -b <new-branch-name>
+git checkout -b <ibm-YYYYMMDD>
+echo "odh: $(git rev-parse --short HEAD)" > release_sources.txt  
 ```
 - This branch will be used to prepare the new release.
 
