@@ -40,6 +40,7 @@ Update your branch with the latest changes from upstream to ensure compatibility
 git config pull.rebase false # merging without rebasing to avoid conflicts.
 git pull upstream main
 git commit -s --amend # To sign-off the merge commit. 
+echo "upstream: $(git rev-parse --short HEAD)" >> release_sources.txt
 ```
 **Tip:** We will use this commit hash in changelog documentation.  
 
