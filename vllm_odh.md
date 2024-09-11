@@ -52,36 +52,36 @@ git branch -D ${PR_NUMBER} # Ensure any existing branch with the same name is de
 git fetch upstream pull/${PR_NUMBER}/head:${PR_NUMBER}
 ```
 
-### 6. **Switch to upstream:main**
+#### 5.1. **Switch to upstream:main**
 Note that the PR changes will be merged into the `upstream:main` branch before being merged into your working branch.
 ```bash
 git checkout upstream/main
 ```
 
-### 7. **Merge the PR with Squash**
+#### 5.2. **Merge the PR with Squash**
 Combine all commits from the PR into a single commit for a cleaner history.
 ```bash
 git merge --squash ${PR_NUMBER}
 git commit -s -m "Squash ${PR_NUMBER}"
 ```
 
-### 8. **Export the Squash Commit Hash**
+#### 5.3. **Export the Squash Commit Hash**
 Retrieve and store the hash of the squashed commit.
 ```bash
 export SQUASH_HEAD=$(git rev-parse --short HEAD)
 # This command saves the commit hash of the squashed changes for later use.
 ```
 
-### 9. **Cherry-Pick the Squashed Commit**
+#### 5.4. **Cherry-Pick the Squashed Commit**
 Mandatory step to apply the changes to the release branch.
 ```bash
 git checkout <target-branch>
 git cherry-pick $SQUASH_HEAD
 ```
 
-**Important Note**: If more PRs need to be added, repeat the loop from steps 5 to 9.
+**Important Note**: If more PRs need to be added, repeat the loop from step 5.
 
-### 10. **Verify the `vllm-tgis-adapter` Version**
+### 6. **Verify the `vllm-tgis-adapter` Version**
 Before proceeding to pull changes into the `ibm-dev` branch, verify the version of `vllm-tgis-adapter` being installed in the `Dockerfile.ubi`. This is a critical step to avoid mismatches during the build.
 ```bash
 # Open the Dockerfile in your preferred text editor
@@ -93,7 +93,7 @@ grep "vllm-tgis-adapter" Dockerfile.ubi
 
 Ensure the correct version is being installed to avoid issues during the build process.
 
-### 11. **Push the Changes to Origin**
+### 7. **Push the Changes to Origin**
 Push the final changes to trigger the build process.
 Currently, the branch `odh/vllm:ibm-dev` is configured to trigger the `fast-ibm` build.
 ```bash
@@ -101,7 +101,7 @@ git push --force origin <target-branch>:ibm-dev
 ```
 - The build logs will be available in **Prow** after pushing to `odh/vllm:ibm-dev`.
 
-### 12. **Add a Tag to the Repository**
+### 8. **Add a Tag to the Repository**
 After completing the updates and ensuring everything is functioning as expected, tag the last commit.
 ```bash
 export LAST_COMMIT=$(git rev-parse --short HEAD)
