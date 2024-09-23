@@ -1,6 +1,6 @@
 import dataclasses
 import itertools
-from typing import Any, Dict, List, Optional, Tuple, Type, cast
+from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, cast
 
 import torch
 import torch.distributed
@@ -26,13 +26,16 @@ from vllm.utils import STR_NOT_IMPL_ENC_DEC_BACKEND, make_tensor_with_pad
 from vllm.worker.model_runner import (GPUModelRunnerBase,
                                       ModelInputForGPUBuilder,
                                       ModelInputForGPUWithSamplingMetadata,
-                                      _get_graph_batch_size)
+                                      TModelInputForGPU, _get_graph_batch_size)
 from vllm.worker.model_runner_base import (
     _add_attn_metadata_broadcastable_dict,
     _add_sampling_metadata_broadcastable_dict)
 from vllm.worker.utils import assert_enc_dec_mr_supported_scenario
 
 logger = init_logger(__name__)
+
+TEncoderDecoderModelInput = TypeVar('TEncoderDecoderModelInput',
+                                    bound="EncoderDecoderModelInput")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -42,6 +45,7 @@ class EncoderDecoderModelInput(ModelInputForGPUWithSamplingMetadata):
     """
     encoder_input_tokens: Optional[torch.Tensor] = None
     encoder_input_positions: Optional[torch.Tensor] = None
+    encoder_seq_lens: Optional[List[int]] = None
 
     def as_broadcastable_tensor_dict(self) -> Dict[str, Any]:
         tensor_dict = {
@@ -69,10 +73,7 @@ class EncoderDecoderModelInput(ModelInputForGPUWithSamplingMetadata):
             super().from_broadcasted_tensor_dict(tensor_dict, attn_backend))
 
 
-class EncoderDecoderModelRunner(GPUModelRunnerBase[EncoderDecoderModelInput]):
-    _model_input_cls: Type[EncoderDecoderModelInput] = (
-        EncoderDecoderModelInput)
-    _builder_cls: Type[ModelInputForGPUBuilder] = (ModelInputForGPUBuilder)
+class EncoderDecoderModelRunnerBase(GPUModelRunnerBase[TModelInputForGPU]):
 
     def __init__(
         self,
@@ -168,113 +169,6 @@ class EncoderDecoderModelRunner(GPUModelRunnerBase[EncoderDecoderModelInput]):
     def _empty_long_tensor(self) -> torch.Tensor:
         return self._list_to_long_tensor([])
 
-    @torch.inference_mode()
-    def execute_model(
-        self,
-        model_input: EncoderDecoderModelInput,
-        kv_caches: List[torch.Tensor],
-        intermediate_tensors: Optional[IntermediateTensors] = None,
-        num_steps: int = 1,
-    ) -> Optional[List[PoolerOutput]]:
-        if num_steps > 1:
-            raise ValueError("num_steps > 1 is not supported in "
-                             "EncoderDecoderModelRunner")
-
-        if (model_input.attn_metadata is not None
-                and model_input.attn_metadata.prefill_metadata is None
-                and model_input.attn_metadata.decode_metadata.use_cuda_graph):
-            assert model_input.input_tokens is not None
-            graph_batch_size = model_input.input_tokens.shape[0]
-            model_executable = self.graph_runners[
-                model_input.virtual_engine][graph_batch_size]
-        else:
-            model_executable = self.model
-
-        seqlen_agnostic_kwargs = {
-            "finished_requests_ids": model_input.finished_requests_ids,
-            "request_ids_to_seq_ids": model_input.request_ids_to_seq_ids,
-        } if self.has_seqlen_agnostic else {}
-        hidden_or_intermediate_states = model_executable(
-            input_ids=model_input.input_tokens,
-            positions=model_input.input_positions,
-            encoder_input_ids=model_input.encoder_input_tokens,
-            encoder_positions=model_input.encoder_input_positions,
-            kv_caches=kv_caches,
-            attn_metadata=model_input.attn_metadata,
-            intermediate_tensors=intermediate_tensors,
-            **seqlen_agnostic_kwargs)
-
-        logits = self.model.compute_logits(hidden_or_intermediate_states,
-                                           model_input.sampling_metadata)
-
-        if not self.is_driver_worker:
-            return []
-
-        if model_input.async_callback is not None:
-            model_input.async_callback()
-
-        # Sample the next token.
-        output: SamplerOutput = self.model.sample(
-            logits=logits,
-            sampling_metadata=model_input.sampling_metadata,
-        )
-
-        return [output]
-
-    def make_model_input_from_broadcasted_tensor_dict(
-            self, tensor_dict: Dict[str, Any]) -> EncoderDecoderModelInput:
-        return EncoderDecoderModelInput.from_broadcasted_tensor_dict(
-            tensor_dict,
-            attn_backend=self.attn_backend,
-        )
-
-    def prepare_model_input(
-        self,
-        seq_group_metadata_list: List[SequenceGroupMetadata],
-        virtual_engine: int = 0,
-        finished_requests_ids: Optional[List[str]] = None
-    ) -> EncoderDecoderModelInput:
-        """Prepare the model input based on a given sequence group, including
-        metadata for the sampling step.
-
-        Since chunked prefill is not supported for encoder/decoder models,
-        `input_tokens` is assumed to be either entirely prefill tokens or
-        entirely decode tokens.
-
-        """
-        model_input = self._prepare_model_input_tensors(
-            seq_group_metadata_list, finished_requests_ids)
-        (
-            attn_metadata,
-            encoder_input_tokens_tensor,
-            encoder_input_positions_tensor,
-        ) = (self._prepare_encoder_model_input_tensors(seq_group_metadata_list,
-                                                       model_input))
-        # Inject attn_metadata encoder/cross-attention fields &
-        # encoder input tokens/positions into model_input.
-        # Frozen dataclass fields cannot be modified, so use
-        # dataclasses.replace to construct a new model input
-        # instance.
-        model_input = dataclasses.replace(
-            model_input,
-            attn_metadata=attn_metadata,
-            encoder_input_tokens=encoder_input_tokens_tensor,
-            encoder_input_positions=encoder_input_positions_tensor,
-        )
-
-        sampling_metadata = SamplingMetadata.prepare(seq_group_metadata_list,
-                                                     model_input.seq_lens,
-                                                     model_input.query_lens,
-                                                     self.device,
-                                                     self.pin_memory)
-        is_prompt = (seq_group_metadata_list[0].is_prompt
-                     if seq_group_metadata_list else None)
-        return dataclasses.replace(model_input,
-                                   sampling_metadata=sampling_metadata,
-                                   is_prompt=is_prompt,
-                                   virtual_engine=virtual_engine)
-
-    @torch.inference_mode()
     def profile_run(self) -> None:
         # Enable top-k sampling to reflect the accurate memory usage.
         sampling_params = SamplingParams(top_p=0.99, top_k=self.vocab_size - 1)
@@ -332,12 +226,12 @@ class EncoderDecoderModelRunner(GPUModelRunnerBase[EncoderDecoderModelInput]):
     def _prepare_encoder_model_input_tensors(
         self,
         seq_group_metadata_list: List[SequenceGroupMetadata],
-        model_input: EncoderDecoderModelInput,
+        model_input: TEncoderDecoderModelInput,
     ) -> Tuple[AttentionMetadata, Optional[torch.Tensor],
-               Optional[torch.Tensor]]:
+               Optional[torch.Tensor], List[int]]:
         """Helper method to prepare the encoder- and cross-attn-related
         model inputs based on a given sequence group. These additional inputs
-        are used to augment an already-computed `EncoderDecoderModelInput`
+        are used to augment an already-computed `TEncoderDecoderModelInput`
         data structure which already has decoder-related model inputs
         populated.
 
@@ -371,7 +265,7 @@ class EncoderDecoderModelRunner(GPUModelRunnerBase[EncoderDecoderModelInput]):
         """
 
         if len(seq_group_metadata_list) == 0:
-            return (model_input.attn_metadata, None, None)
+            return (model_input.attn_metadata, None, None, [])
 
         # Since we are not supporting chunked prefill either the entire
         # batch is prefill or it is decode
@@ -509,4 +403,117 @@ class EncoderDecoderModelRunner(GPUModelRunnerBase[EncoderDecoderModelInput]):
         )
 
         return (attn_metadata, encoder_input_tokens_tensor,
-                encoder_input_positions_tensor)
+                encoder_input_positions_tensor, encoder_seq_lens)
+
+
+class EncoderDecoderModelRunner(
+        EncoderDecoderModelRunnerBase[EncoderDecoderModelInput]):
+
+    _model_input_cls: Type[EncoderDecoderModelInput] = (
+        EncoderDecoderModelInput)
+    _builder_cls: Type[ModelInputForGPUBuilder] = (ModelInputForGPUBuilder)
+
+    def make_model_input_from_broadcasted_tensor_dict(
+            self, tensor_dict: Dict[str, Any]) -> EncoderDecoderModelInput:
+        return EncoderDecoderModelInput.from_broadcasted_tensor_dict(
+            tensor_dict,
+            attn_backend=self.attn_backend,
+        )
+
+    @torch.inference_mode()
+    def execute_model(
+        self,
+        model_input: EncoderDecoderModelInput,
+        kv_caches: List[torch.Tensor],
+        intermediate_tensors: Optional[IntermediateTensors] = None,
+        num_steps: int = 1,
+    ) -> Optional[List[PoolerOutput]]:
+        if num_steps > 1:
+            raise ValueError("num_steps > 1 is not supported in "
+                             "EncoderDecoderModelRunner")
+
+        if (model_input.attn_metadata is not None
+                and model_input.attn_metadata.prefill_metadata is None
+                and model_input.attn_metadata.decode_metadata.use_cuda_graph):
+            assert model_input.input_tokens is not None
+            graph_batch_size = model_input.input_tokens.shape[0]
+            model_executable = self.graph_runners[
+                model_input.virtual_engine][graph_batch_size]
+        else:
+            model_executable = self.model
+        seqlen_agnostic_kwargs = {
+            "finished_requests_ids": model_input.finished_requests_ids,
+            "request_ids_to_seq_ids": model_input.request_ids_to_seq_ids,
+        } if self.has_seqlen_agnostic else {}
+        hidden_or_intermediate_states = model_executable(
+            input_ids=model_input.input_tokens,
+            positions=model_input.input_positions,
+            encoder_input_ids=model_input.encoder_input_tokens,
+            encoder_positions=model_input.encoder_input_positions,
+            kv_caches=kv_caches,
+            attn_metadata=model_input.attn_metadata,
+            intermediate_tensors=intermediate_tensors,
+            **seqlen_agnostic_kwargs)
+
+        logits = self.model.compute_logits(hidden_or_intermediate_states,
+                                           model_input.sampling_metadata)
+
+        if not self.is_driver_worker:
+            return []
+
+        if model_input.async_callback is not None:
+            model_input.async_callback()
+
+        # Sample the next token.
+        output: SamplerOutput = self.model.sample(
+            logits=logits,
+            sampling_metadata=model_input.sampling_metadata,
+        )
+
+        return [output]
+
+    def prepare_model_input(
+        self,
+        seq_group_metadata_list: List[SequenceGroupMetadata],
+        virtual_engine: int = 0,
+        finished_requests_ids: Optional[List[str]] = None
+    ) -> EncoderDecoderModelInput:
+        """Prepare the model input based on a given sequence group, including
+        metadata for the sampling step.
+
+        Since chunked prefill is not supported for encoder/decoder models,
+        `input_tokens` is assumed to be either entirely prefill tokens or
+        entirely decode tokens.
+
+        """
+        model_input = self._prepare_model_input_tensors(
+            seq_group_metadata_list, finished_requests_ids)
+
+        (attn_metadata, encoder_input_tokens_tensor,
+         encoder_input_positions_tensor,
+         _) = self._prepare_encoder_model_input_tensors(
+             seq_group_metadata_list, model_input)
+
+        # Inject attn_metadata encoder/cross-attention fields &
+        # encoder input tokens/positions into model_input.
+        # Frozen dataclass fields cannot be modified, so use
+        # dataclasses.replace to construct a new model input
+        # instance.
+        model_input = dataclasses.replace(
+            model_input,
+            attn_metadata=attn_metadata,
+            encoder_input_tokens=encoder_input_tokens_tensor,
+            encoder_input_positions=encoder_input_positions_tensor,
+        )
+
+        sampling_metadata = SamplingMetadata.prepare(seq_group_metadata_list,
+                                                     model_input.seq_lens,
+                                                     model_input.query_lens,
+                                                     self.device,
+                                                     self.pin_memory)
+        is_prompt = (seq_group_metadata_list[0].is_prompt
+                     if seq_group_metadata_list else None)
+        return dataclasses.replace(model_input,
+                                   sampling_metadata=sampling_metadata,
+                                   is_prompt=is_prompt,
+                                   virtual_engine=virtual_engine)

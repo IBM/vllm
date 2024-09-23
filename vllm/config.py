@@ -560,7 +560,17 @@ class ModelConfig:
     @property
     def is_encoder_decoder_model(self) -> bool:
         """Extract the HF encoder/decoder model flag."""
-        return getattr(self.hf_config, "is_encoder_decoder", False)
+        is_encoder_decoder = getattr(self.hf_config, "is_encoder_decoder",
+                                     False)
+        is_decoder = getattr(self.hf_config, "is_decoder", False)
+        return is_encoder_decoder or not is_decoder
+
+    @property
+    def is_encoder_model(self) -> bool:
+        is_encoder_decoder = getattr(self.hf_config, "is_encoder_decoder",
+                                     False)
+        is_decoder = getattr(self.hf_config, "is_decoder", False)
+        return is_encoder_decoder is False and is_decoder is False
 
     @property
     def is_embedding_model(self) -> bool:
