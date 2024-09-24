@@ -1,0 +1,128 @@
+name: "Build"
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - release
+    paths-ignore:
+      - "**.md"
+      - "proto/**"
+
+  pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - "**.md"
+      - "proto/**"
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  SERVER_IMAGE: "quay.io/wxpe/tgis-vllm"
+  IMAGE_REGISTRY: "quay.io"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    env:
+      CACHE_IMAGE: "ghcr.io/ibm/tgis-vllm:build-cache"
+      CACHE_REGISTRY: "ghcr.io"
+      CACHE_PACKAGE_NAME: "tgis-vllm"
+      
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@v4
+
+      - name: "Free up disk space"
+        uses: ./.github/actions/free-up-disk-space
+
+      - name: "Set up QEMU"
+        uses: docker/setup-qemu-action@v3
+
+      - name: "Set up Docker Buildx"
+        uses: docker/setup-buildx-action@v3
+
+      - name: "Log in to container registry (server-release)"
+        uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ${{ env.IMAGE_REGISTRY }}
+          username: ${{ secrets.WXPE_QUAY_USER }}
+          password: ${{ secrets.WXPE_QUAY_TOKEN }}
+
+      - name: "Log in to container registry (cache image)"
+        uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ${{ env.CACHE_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: "Set build cache target"
+        run: |
+          # For push to `main` (PR merged), push a new cache image with all layers (cache-mode=max).
+          # For PR builds, use GitHub action cache which isolates cached layers by PR/branch.
+          # to optimize builds for subsequent pushes to the same PR/branch.
+          # Do not set a cache-to image for PR builds to not overwrite the `main` cache image and
+          # to not ping-pong cache images for two or more different PRs.
+          # Do not push cache images for each PR or multiple branches to not exceed GitHub package
+          # usage and traffic limitations.
+          # UPDATE 2024/02/26: GHA cache appears to have issues, cannot use `cache-to: gha,mode=min`
+          # if `cache-from: reg...,mode=max` but `cache-to: gha,mode=max` takes longer than uncached
+          # build and exhausts GHA cache size limits, so use cache `type=inline` (no external cache).
+          if [ "${{ github.event_name }}" == "pull_request" ]
+          then
+              #CACHE_TO="type=gha,mode=min"
+              CACHE_TO="type=inline"
+          else
+              CACHE_TO="type=registry,ref=${{ env.CACHE_IMAGE }},mode=max"
+          fi
+          echo "CACHE_TO=$CACHE_TO" >> $GITHUB_ENV
+
+      - name: "Generate tags"
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.SERVER_IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,enable=true,priority=100,prefix=,suffix=,format=short     
+            type=sha,enable=true,priority=100,prefix=${{ github.ref_name }}.,suffix=,format=short     
+
+      - name: "UBI Docker build"
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: vllm-openai
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=registry,ref=${{ env.CACHE_IMAGE }}
+          cache-to: ${{ env.CACHE_TO }}
+          push: ${{ github.event_name != 'pull_request' }}
+          file: Dockerfile.ubi
+
+      - name: "List docker images"
+        run: docker images
+
+      - name: "Cleanup old cache images"
+        uses: actions/delete-package-versions@v5
+        if: ${{ github.event_name == 'push' }}
+        with: 
+          package-name: ${{ env.CACHE_PACKAGE_NAME }}
+          package-type: container
+          delete-only-untagged-versions: true
+
+      - name: "Check disk usage"
+        shell: bash
+        run: |
+          docker system df
+          df -h
