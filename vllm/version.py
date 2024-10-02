@@ -7,5 +7,5 @@ except Exception as e:
                   RuntimeWarning,
                   stacklevel=2)
 
-__version__ = "0.6.1.post2"
+    __version__ = "dev"
     __version_tuple__ = (0, 0, __version__)

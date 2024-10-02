@@ -24,7 +24,9 @@ from vllm.lora.lora import LoRALayerWeights, PackedLoRALayerWeights
 from vllm.lora.punica import PunicaWrapper
 from vllm.lora.utils import (from_layer, from_layer_logits_processor,
                              parse_fine_tuned_lora_name, replace_submodule)
-from vllm.model_executor.models.interfaces import SupportsLoRA
+from vllm.model_executor.models.interfaces import (SupportsLoRA,
+                                                   supports_multimodal)
+from vllm.model_executor.models.module_mapping import MultiModelKeys
 from vllm.model_executor.models.utils import PPMissingLayer
 from vllm.utils import is_pin_memory_available
 
@@ -117,7 +119,8 @@ class LoRAModel(AdapterModel):
         pin_memory = str(device) == "cpu" and is_pin_memory_available()
         loras: Dict[str, LoRALayerWeights] = {}
         for tensor_name, tensor in tensors.items():
-            module_name, is_lora_a = parse_fine_tuned_lora_name(tensor_name)
+            module_name, is_lora_a, is_bias = parse_fine_tuned_lora_name(
+                tensor_name)
             if module_name not in loras:
                 lora_embeddings_tensor = None
                 if embeddings:
@@ -135,7 +138,14 @@ class LoRAModel(AdapterModel):
                 loras[module_name] = LoRALayerWeights(module_name, rank,
                                                       lora_alpha, None, None,
                                                       lora_embeddings_tensor)
-            if is_lora_a:
+            if is_bias:
+                loras[module_name].bias = tensor.to(device=device,
+                                                    dtype=dtype).t()
+                if pin_memory:
+                    bias = loras[module_name].bias
+                    if bias is not None:
+                        loras[module_name].bias = bias.pin_memory()
+            elif is_lora_a:
                 loras[module_name].lora_a = tensor.to(device=device,
                                                       dtype=dtype).t()
                 if pin_memory:
@@ -213,7 +223,7 @@ class LoRAModel(AdapterModel):
             with safetensors.safe_open(lora_tensor_path,
                                        framework="pt") as f:  # type: ignore
                 for lora_module in f.keys():  # noqa
-                    module_name, _ = parse_fine_tuned_lora_name(lora_module)
+                    module_name, _, _ = parse_fine_tuned_lora_name(lora_module)
                     part_name = module_name.split(".")[-1]
                     if part_name not in expected_lora_modules:
                         unexpected_modules.append(module_name)
@@ -332,6 +342,8 @@ class LoRAModelManager(AdapterModelManager):
                 self.supported_lora_modules.append("rotary_emb")
             self.packed_modules_mapping = copy.deepcopy(
                 self.model.packed_modules_mapping)
+        # Used to indicate whether the model is a multimodal model
+        self.supports_mm: bool = supports_multimodal(self.model)
         self.packed_modules: Dict[str, List[str]] = {}
         self.modules: Dict[str, "BaseLayerWithLoRA"] = {}
         # Dict instead of a Set for compatibility with LRUCache.
@@ -374,8 +386,12 @@ class LoRAModelManager(AdapterModelManager):
             module_lora = lora_model.get_lora(module_name)
             if module_lora:
                 module_lora.optimize()
+                # Bias is not explicitly enabled with the flag enable_lora_bias.
+                if not self.lora_config.bias_enabled:
+                    module_lora.bias = None
                 module.set_lora(index, module_lora.lora_a, module_lora.lora_b,
-                                module_lora.embeddings_tensor)
+                                module_lora.embeddings_tensor,
+                                module_lora.bias)
             else:
                 module.reset_lora(index)
         return True
@@ -437,12 +453,22 @@ class LoRAModelManager(AdapterModelManager):
                 continue
             if not self._match_target_modules(module_name):
                 continue
+            # A temporary approach for multimodal models to support LoRA
+            # TODO: Remove this restriction
+            if self._filter_unsupported_mm_module(module_name):
+                logger.warning(
+                    "Regarding multimodal models, vLLM currently only supports "
+                    "adding LoRA to language model, %s will be ignored.",
+                    module_name,
+                )
+                continue
             parts = module_name.split(".")[-1]
             packed_moduled_lst = self.packed_modules_mapping.get(parts, [])
             new_module = replace_submodule(
                 self.model, module_name,
                 from_layer(module, self.lora_slots, self.lora_config,
                            packed_moduled_lst, self.model.config))
+
             # LinearScalingRotaryEmbeddingWithLora is used to handle
             # long context lora. Register relevant metadata.
             if isinstance(new_module, LinearScalingRotaryEmbeddingWithLora):
@@ -460,6 +486,15 @@ class LoRAModelManager(AdapterModelManager):
                                                 module, self.lora_slots,
                                                 self.lora_config,
                                                 self.model.config))
+
+            # In some models, especially multimodal ones, layers with the same
+            # name may have different types, such as nn.Linear and
+            # ReplicatedLinear. The nn.Linear layers cannot be replaced with
+            # LoRA layers, leading to assertion error. The following check
+            # aims to prevent this error
+            if self.supports_mm and not isinstance(new_module,
+                                                   BaseLayerWithLoRA):
+                continue
             self.register_module(module_name, new_module)
             self._register_packed_modules(module_name)
             # All lora layers share the same punica_wrapper based on reference.
@@ -478,9 +513,11 @@ class LoRAModelManager(AdapterModelManager):
         """Create zero-initialized LoRAModel for warmup."""
         model = LoRAModel(lora_id, rank, {}, scaling_factor)
         for module_name, module in self.model.named_modules():
-            if not self._match_target_modules(module_name) or not isinstance(
-                    module, BaseLayerWithLoRA) or isinstance(
-                        module, LinearScalingRotaryEmbeddingWithLora):
+            bias_enabled = self.lora_config.bias_enabled
+            if (not self._match_target_modules(module_name)
+                    or not isinstance(module, BaseLayerWithLoRA)
+                    or isinstance(module, LinearScalingRotaryEmbeddingWithLora)
+                    or self._filter_unsupported_mm_module(module_name)):
                 continue
             parts = module_name.split(".")
             if module_name not in self.packed_modules:
@@ -504,7 +541,8 @@ class LoRAModelManager(AdapterModelManager):
                         rank,
                         module.lora_a_stacked.dtype,
                         "cpu",
-                        embeddings_tensor_dim=embeddings_tensor_dim)
+                        embeddings_tensor_dim=embeddings_tensor_dim,
+                        bias_enabled=bias_enabled)
                 else:
                     lora = LoRALayerWeights.create_dummy_lora_weights(
                         module_name,
@@ -513,6 +551,7 @@ class LoRAModelManager(AdapterModelManager):
                         rank,
                         module.lora_a_stacked.dtype,
                         "cpu",
+                        bias_enabled=bias_enabled,
                     )
                 lora.optimize()
             else:
@@ -527,6 +566,7 @@ class LoRAModelManager(AdapterModelManager):
                         rank,
                         module.lora_a_stacked[i].dtype,
                         "cpu",
+                        bias_enabled=bias_enabled,
                     )
                     lora.optimize()
                     subloras.append(lora)
@@ -540,6 +580,19 @@ class LoRAModelManager(AdapterModelManager):
                 r".*\.{target_module}$".format(target_module=target_module),
                 module_name) or target_module == module_name
             for target_module in self.supported_lora_modules)
+
+    def _filter_unsupported_mm_module(self, module_name: str) -> bool:
+        """
+        Regarding multimodal models, vLLM currently only supports adding LoRA to
+        language model. LoRA for other modules, such as the vision tower, will 
+        be filtered out.
+        """
+        if self.supports_mm:
+            prefix = module_name.split(".")[0]
+            module_mapping: MultiModelKeys = self.model.get_mm_mapping()
+            return (prefix in module_mapping.connector
+                    or prefix in module_mapping.tower_model)
+        return False
 
     def _register_packed_modules(self, module_full_name: str) -> None:
         parts = module_full_name.split(".")

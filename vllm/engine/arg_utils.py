@@ -2,8 +2,8 @@ import argparse
 import dataclasses
 import json
 from dataclasses import dataclass
-from typing import (TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Tuple,
-                    Type, Union)
+from typing import (TYPE_CHECKING, Any, Dict, List, Literal, Mapping, Optional,
+                    Tuple, Type, Union)
 
 import torch
 
@@ -133,6 +133,7 @@ class EngineArgs:
     tokenizer_pool_extra_config: Optional[dict] = None
     limit_mm_per_prompt: Optional[Mapping[str, int]] = None
     enable_lora: bool = False
+    enable_lora_bias: bool = False
     max_loras: int = 1
     max_lora_rank: int = 16
     enable_prompt_adapter: bool = False
@@ -145,6 +146,7 @@ class EngineArgs:
     max_cpu_loras: Optional[int] = None
     device: str = 'auto'
     num_scheduler_steps: int = 1
+    multi_step_stream_outputs: bool = False
     ray_workers_use_nsight: bool = False
     num_gpu_blocks_override: Optional[int] = None
     num_lookahead_slots: int = 0
@@ -176,6 +178,7 @@ class EngineArgs:
     disable_async_output_proc: bool = False
     override_neuron_config: Optional[Dict[str, Any]] = None
     mm_processor_kwargs: Optional[Dict[str, Any]] = None
+    scheduling_policy: Literal["fcfs", "priority"] = "fcfs"
 
     def __post_init__(self):
         if self.tokenizer is None:
@@ -525,6 +528,9 @@ class EngineArgs:
         parser.add_argument('--enable-lora',
                             action='store_true',
                             help='If True, enable handling of LoRA adapters.')
+        parser.add_argument('--enable-lora-bias',
+                            action='store_true',
+                            help='If True, enable bias for LoRA adapters.')
         parser.add_argument('--max-loras',
                             type=int,
                             default=EngineArgs.max_loras,
@@ -595,6 +601,10 @@ class EngineArgs:
                             help=('Maximum number of forward steps per '
                                   'scheduler call.'))
 
+        parser.add_argument(
+            '--multi-step-stream-outputs',
+            action='store_true',
+            help='If True, then multi-step will stream outputs for every step')
         parser.add_argument(
             '--scheduler-delay-factor',
             type=float,
@@ -792,6 +802,16 @@ class EngineArgs:
             default=None,
             help="override or set neuron device configuration.")
 
+        parser.add_argument(
+            '--scheduling-policy',
+            choices=['fcfs', 'priority'],
+            default="fcfs",
+            help='The scheduling policy to use. "fcfs" (first come first served'
+            ', i.e. requests are handled in order of arrival; default) '
+            'or "priority" (requests are handled based on given '
+            'priority (lower value means earlier handling) and time of '
+            'arrival deciding any ties).')
+
         return parser
 
     @classmethod
@@ -975,9 +995,13 @@ class EngineArgs:
             if speculative_config is not None:
                 raise ValueError("Speculative decoding is not supported with "
                                  "multi-step (--num-scheduler-steps > 1)")
-            if self.enable_chunked_prefill:
-                raise ValueError("Chunked prefill is not supported with "
-                                 "multi-step (--num-scheduler-steps > 1)")
+            if self.enable_chunked_prefill and self.enable_prefix_caching:
+                raise ValueError("Multi-Step is not supported with "
+                                 "both Chunked-Prefill and Prefix-Caching "
+                                 "enabled together.")
+            if self.enable_chunked_prefill and self.pipeline_parallel_size > 1:
+                raise ValueError("Multi-Step Chunked-Prefill is not supported "
+                                 "for pipeline-parallel-size > 1")
 
         # make sure num_lookahead_slots is set the higher value depending on
         # if we are using speculative decoding or multi-step
@@ -999,10 +1023,13 @@ class EngineArgs:
             is_multimodal_model=model_config.is_multimodal_model,
             preemption_mode=self.preemption_mode,
             num_scheduler_steps=self.num_scheduler_steps,
+            multi_step_stream_outputs=self.multi_step_stream_outputs,
             send_delta_data=(envs.VLLM_USE_RAY_SPMD_WORKER
                              and parallel_config.use_ray),
+            policy=self.scheduling_policy,
         )
         lora_config = LoRAConfig(
+            bias_enabled=self.enable_lora_bias,
             max_lora_rank=self.max_lora_rank,
             max_loras=self.max_loras,
             fully_sharded_loras=self.fully_sharded_loras,
