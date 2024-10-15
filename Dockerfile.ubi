@@ -9,6 +9,7 @@ USER root
 # install rustup
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
 ENV PATH="${HOME}/.cargo/bin:${PATH}"
+RUN chmod -R 777 /home/vllm/.cargo
 
 # install rsync
 RUN microdnf install -y rsync
