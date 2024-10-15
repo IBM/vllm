@@ -1,10 +1,17 @@
 # Start from released image
-FROM quay.io/opendatahub/vllm:cuda-pr-173 as vllm-grpc-adapter
+FROM quay.io/opendatahub/vllm:fast-ibm-6308d91 as vllm-grpc-adapter
 
 USER root
 
 # Copy source code changes into the installed location to overwrite the installed python code
-COPY vllm /opt/vllm/lib64/python3.12/site-packages/vllm
+# COPY vllm /opt/vllm/lib64/python3.12/site-packages/vllm
+
+# install rustup
+RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
+ENV PATH="${HOME}/.cargo/bin:${PATH}"
+
+# install rsync
+RUN microdnf install -y rsync
 
 ENV GRPC_PORT=8033 \
     PORT=8000 \
