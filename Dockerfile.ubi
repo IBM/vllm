@@ -1,5 +1,5 @@
 # Start from released image
-FROM quay.io/opendatahub/vllm:fast-ibm-6308d91 as vllm-grpc-adapter
+FROM quay.io/opendatahub/vllm:fast-ibm-12c6b82 as vllm-grpc-adapter
 
 USER root
 
