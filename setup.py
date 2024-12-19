@@ -8,12 +8,10 @@ from pathlib import Path
 from shutil import which
 from typing import Dict, List
 
-import torch
 from packaging.version import Version, parse
 from setuptools import Extension, find_packages, setup
 from setuptools.command.build_ext import build_ext
 from setuptools_scm import get_version
-from torch.utils.cpp_extension import CUDA_HOME
 
 
 def load_module_from_path(module_name, path):
@@ -32,6 +30,14 @@ logger = logging.getLogger(__name__)
 envs = load_module_from_path('envs', os.path.join(ROOT_DIR, 'vllm', 'envs.py'))
 
 VLLM_TARGET_DEVICE = envs.VLLM_TARGET_DEVICE
+
+if VLLM_TARGET_DEVICE in ["cuda", "rocm"]:
+    # we need to make this import happen only when needed
+    # since torch==2.4.0 is pinned in build deps but not
+    # available on s390x currently. we only actually need
+    # this import when using cuda or rocm.
+    import torch
+    from torch.utils.cpp_extension import CUDA_HOME
 
 if not sys.platform.startswith("linux"):
     logger.warning(
@@ -272,8 +278,7 @@ def _no_device() -> bool:
 
 
 def _is_cuda() -> bool:
-    has_cuda = torch.version.cuda is not None
-    return (VLLM_TARGET_DEVICE == "cuda" and has_cuda
+    return (VLLM_TARGET_DEVICE == "cuda" and (torch.version.cuda is not None)
             and not (_is_neuron() or _is_tpu() or _is_hpu()))
 
 
@@ -297,6 +302,10 @@ def _is_tpu() -> bool:
 
 def _is_cpu() -> bool:
     return VLLM_TARGET_DEVICE == "cpu"
+
+
+def _is_spyre() -> bool:
+    return VLLM_TARGET_DEVICE == "spyre"
 
 
 def _is_openvino() -> bool:
@@ -415,6 +424,8 @@ def get_vllm_version() -> str:
         if neuron_version != MAIN_CUDA_VERSION:
             neuron_version_str = neuron_version.replace(".", "")[:3]
             version += f"{sep}neuron{neuron_version_str}"
+    elif _is_spyre():
+        version += f"{sep}spyre"
     elif _is_hpu():
         # Get the Intel Gaudi Software Suite version
         gaudi_sw_version = str(get_gaudi_sw_version())
@@ -479,6 +490,8 @@ def get_requirements() -> List[str]:
         requirements = _read_requirements("requirements-rocm.txt")
     elif _is_neuron():
         requirements = _read_requirements("requirements-neuron.txt")
+    elif _is_spyre():
+        requirements = _read_requirements("requirements-spyre.txt")
     elif _is_hpu():
         requirements = _read_requirements("requirements-hpu.txt")
     elif _is_openvino():

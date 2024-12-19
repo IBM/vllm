@@ -516,6 +516,15 @@ class LLMEngine:
         elif engine_config.device_config.device_type == "neuron":
             from vllm.executor.neuron_executor import NeuronExecutor
             executor_class = NeuronExecutor
+        elif engine_config.device_config.device_type == "spyre":
+            if distributed_executor_backend == "mp":
+                from vllm.executor.multiproc_spyre_executor import (
+                    MultiprocessingSpyreExecutor)
+                executor_class = MultiprocessingSpyreExecutor
+            else:
+                from vllm.executor.spyre_executor import SpyreExecutor
+                executor_class = SpyreExecutor
+
         elif engine_config.device_config.device_type == "tpu":
             if distributed_executor_backend == "ray":
                 initialize_ray_cluster(engine_config.parallel_config)

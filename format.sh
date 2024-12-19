@@ -195,7 +195,7 @@ if [[ "$1" == '--files' ]]; then
    # If `--all` is passed, then any further arguments are ignored and the
    # entire python directory is linted.
 elif [[ "$1" == '--all' ]]; then
-   lint vllm tests
+   lint vllm tests examples
 else
    # Format only the files that changed in last commit.
    lint_changed
@@ -278,7 +278,7 @@ clang_format_changed() {
 
 # Format all files with clang-format
 clang_format_all() {
-    find csrc/ \( -name '*.h' -o -name '*.cpp' -o -name '*.cu' -o -name '*.cuh' \) -print \
+    find csrc \( -name '*.h' -o -name '*.cpp' -o -name '*.cu' -o -name '*.cuh' \) -print \
         | grep -vFf <(printf "%s\n" "${CLANG_FORMAT_EXCLUDES[@]}") \
         | xargs clang-format -i
 }

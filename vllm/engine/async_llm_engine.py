@@ -617,6 +617,14 @@ class AsyncLLMEngine(EngineClient):
         elif engine_config.device_config.device_type == "neuron":
             from vllm.executor.neuron_executor import NeuronExecutorAsync
             executor_class = NeuronExecutorAsync
+        if engine_config.device_config.device_type == "spyre":
+            if distributed_executor_backend == "mp":
+                from vllm.executor.multiproc_spyre_executor import (
+                    MultiprocessingSpyreExecutorAsync)
+                executor_class = MultiprocessingSpyreExecutorAsync
+            else:
+                from vllm.executor.spyre_executor import SpyreExecutorAsync
+                executor_class = SpyreExecutorAsync
         elif engine_config.device_config.device_type == "tpu":
             if distributed_executor_backend == "ray":
                 from vllm.executor.ray_tpu_executor import RayTPUExecutorAsync

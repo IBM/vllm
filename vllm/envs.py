@@ -67,6 +67,9 @@ if TYPE_CHECKING:
     VLLM_USE_TRITON_AWQ: bool = False
     VLLM_ALLOW_RUNTIME_LORA_UPDATING: bool = False
     VLLM_SKIP_P2P_CHECK: bool = False
+    VLLM_SPYRE_WARMUP_PROMPT_LENS: Optional[List[int]] = None
+    VLLM_SPYRE_WARMUP_NEW_TOKENS: Optional[List[int]] = None
+    VLLM_SPYRE_WARMUP_BATCH_SIZES: Optional[List[int]] = None
     VLLM_DISABLED_KERNELS: List[str] = []
     VLLM_USE_V1: bool = False
     VLLM_ENABLE_V1_MULTIPROCESSING: bool = False
@@ -457,6 +460,41 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     # If set, enable multiprocessing in LLM for the V1 code path.
     "VLLM_ENABLE_V1_MULTIPROCESSING":
     lambda: bool(int(os.getenv("VLLM_ENABLE_V1_MULTIPROCESSING", "0"))),
+
+    # Defines the prompt lengths the Spyre accelerator should be prepared
+    # for, formatted as comma separated list.
+    "VLLM_SPYRE_WARMUP_PROMPT_LENS":
+    lambda: [
+        int(p) for p in os.getenv(key='VLLM_SPYRE_WARMUP_PROMPT_LENS',
+                                  default='64').split(',')
+    ],
+
+    # Defines the max output tokens the Spyre accelerator should be prepared
+    # for, formatted as comma separated list.
+    "VLLM_SPYRE_WARMUP_NEW_TOKENS":
+    lambda: [
+        int(d) for d in os.getenv(key='VLLM_SPYRE_WARMUP_NEW_TOKENS',
+                                  default='20').split(',')
+    ],
+
+    # Defines the batch sizes the Spyre accelerator should be prepared
+    # for, formatted as comma separated list.
+    "VLLM_SPYRE_WARMUP_BATCH_SIZES":
+    lambda: [
+        int(b) for b in os.getenv(key='VLLM_SPYRE_WARMUP_BATCH_SIZES',
+                                  default='1').split(',')
+    ],
+
+    # Defines the backend that torch.compile will use when using Spyre
+    # Available options:
+    # - "sendnn_decoder": Compile for execution on Spyre hardware for
+    #   decoder models
+    # - "sendnn": Compile for execution on Spyre hardware for
+    #   encoder models
+    # - "inductor": Compile for execution on CPU (for debug and testing)
+    # - "eager": Skip compile entirely (for debug and testing
+    "VLLM_SPYRE_DYNAMO_BACKEND":
+    lambda: os.getenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn_decoder"),
 }
 
 # end-env-vars-definition

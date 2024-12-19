@@ -37,6 +37,7 @@ DEVICE_OPTIONS = [
     "openvino",
     "tpu",
     "xpu",
+    "spyre",
     "hpu",
 ]
 
@@ -394,7 +395,6 @@ class EngineArgs:
         parser.add_argument('--block-size',
                             type=int,
                             default=EngineArgs.block_size,
-                            choices=[8, 16, 32, 64, 128],
                             help='Token block size for contiguous chunks of '
                             'tokens. This is ignored on neuron devices and '
                             'set to max-model-len')
