@@ -17,72 +17,9 @@ Easy, fast, and cheap LLM serving for everyone
 
 ## What is the purpose of this fork?
 
-This is a private fork of vLLM that we are using to develop support for IBM Research's AI accelerator (Spyre). 
+This is a fork of vLLM that we are using to develop support for IBM's AI accelerator (Spyre). 
 The idea is that the main branch of this repo should not diverge significantly from upstream beyond changes required to enable Spyre.
 We will try to rebase against upstream frequently and we plan to contribute these changes to the upstream repository in the future. 
-
----
-## Supported IBM Granite models on Spyre
-
-| Model        | 3b     | 7b    | 8b     | 13b     | 20b    |
-|:------------:|:------------:|:------------:|:------------:|:------------:|:------------:|
-| **llama** | NO<sup>1</sup> <br> [weights](https://huggingface.co/ibm-granite/granite-3b-code-base) | YES<sup>2</sup> <br> [weights](https://huggingface.co/ibm-granite/granite-7b-base) | YES<sup>3</sup> <br> [weights](https://huggingface.co/ibm-granite/granite-8b-code-base) | X | X |
-| **gpt big code** | YES<sup>4</sup> <br> [-](tom)  | X | X | YES<sup>5</sup> <br> [-](tom) | YES<sup>6</sup> <br> [weights](https://huggingface.co/ibm-granite/granite-20b-code-base) |
-
-
-
-YES &nbsp;= &nbsp;working on Spyre   
-NO&nbsp;&nbsp;&nbsp;= &nbsp;not yet working on Spyre   
-X &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= &nbsp;no weights available
-
-
-#### Path to models 
-
-1 : ```/models/granite-3b-code-base```<br>
-2 : ```/models/granite-7b-base```<br>
-3 : ```/models/granite-8b-code-base```<br>
-4 : ```/models/granite-3b-base```<br>
-5 : ```/models/granite-13b-base```<br>
-6 : ```/models/granite-20b-code-base```<br><br>
-(PVC in dev pod)<br>
-## Running ***offline*** demo on Spyre
-
-```bash
-python3 examples/offline_inference_spyre.py
-```
-## Running ***online*** demo on Spyre
-
-### Batch size 1
-Log in to the same pod with two terminal windows and launch the server in one and submit requests from the other. 
-
-**1st terminal window**: Set up the server with a model provided at \<path> [above](#path-to-models) (slow, takes a long time due to Spyre compilation):
-```bash
-python3 -m vllm.entrypoints.openai.api_server --model <path> --max-model-len=2048 --block-size=2048
-```
-Optionally set the desired prompt padding (*default 64*) to any multiple of 64 and specify the maximal number of generated output tokens (*default 20*) with **VLLM_SPYRE_WARMUP_PROMPT_LENS** and **VLLM_SPYRE_WARMUP_NEW_TOKENS**: 
-```bash
-export VLLM_SPYRE_WARMUP_PROMPT_LENS=64
-export VLLM_SPYRE_WARMUP_NEW_TOKENS=20
-```
-before starting the server.
-**2nd terminal window**: When the above warmup has completed, submit sample prompts for LLM completion (fast):
-```bash
-python3 examples/spyre_warmup_online_client.py 
-```
-### Batch size 4/8
-
-Before launching the server specify the batch size to be used (below set to 8) via the environment variable **VLLM_SPYRE_WARMUP_BATCH_SIZES** (*default 1*):
-```bash
-export VLLM_SPYRE_WARMUP_BATCH_SIZES=4
-```
-
-Finally continue as described [above](#batch-size-1) by launching the server in the 1st terminal window. 
-Before submitting prompts from the 2nd terminal window make sure to specify the batch size (same as set via **VLLM_SPYRE_WARMUP_BATCH_SIZES**) in the [client script](./examples/spyre_warmup_online_client.py) (line 44). 
-### Example notebooks
-
-- [./examples/online_inference_spyre.ipynb](./examples/online_inference_spyre.ipynb)
-- [./examples/offline_inference_spyre.ipynb](./examples/offline_inference_spyre.ipynb)
-
 
 ---
 *Latest News* 🔥
