@@ -1,6 +1,7 @@
 import copy
 import enum
 import json
+import operator
 import warnings
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -382,6 +383,8 @@ class ModelConfig:
         ]
         tpu_supported_quantization = ["tpu_int8"]
         neuron_supported_quantization = ["neuron_quant"]
+        spyre_supported_quantization = ["gptq"]
+
         if self.quantization is not None:
             self.quantization = self.quantization.lower()
 
@@ -441,6 +444,11 @@ class ModelConfig:
                 raise ValueError(
                     f"{self.quantization} quantization is currently not "
                     f"supported in Neuron Backend.")
+            if current_platform.is_spyre(
+            ) and self.quantization not in spyre_supported_quantization:
+                raise ValueError(
+                    f"{self.quantization} quantization is currently not "
+                    f"supported in Spyre Backend.")
 
     def _verify_cuda_graph(self) -> None:
         if self.max_seq_len_to_capture is None:
@@ -1148,6 +1156,39 @@ class SchedulerConfig:
         self.num_scheduler_steps = num_scheduler_steps
         self.multi_step_stream_outputs = multi_step_stream_outputs
         self.send_delta_data = send_delta_data
+        self.spyre_scheduling_enabled = current_platform.is_spyre()
+        if self.spyre_scheduling_enabled:
+            # load warmup shapes and sort by "speed"
+            wup_prompt_lens = envs.VLLM_SPYRE_WARMUP_PROMPT_LENS or []
+            wup_batch_sizes = envs.VLLM_SPYRE_WARMUP_BATCH_SIZES or []
+            if len(wup_prompt_lens) != len(wup_batch_sizes):
+                raise RuntimeError(
+                    "The lists in VLLM_SPYRE_WARMUP_PROMPT_LENS and "
+                    "VLLM_SPYRE_WARMUP_BATCH_SIZES must have equal length")
+            if task == "embedding":
+                wup_new_tokens = [0] * len(wup_prompt_lens)
+            else:
+                wup_new_tokens = envs.VLLM_SPYRE_WARMUP_NEW_TOKENS or []
+                if len(wup_new_tokens) != len(wup_prompt_lens):
+                    raise RuntimeError(
+                        "The lists in VLLM_SPYRE_WARMUP_PROMPT_LENS and "
+                        "VLLM_SPYRE_WARMUP_NEW_TOKENS must have equal length")
+
+            print("[SchedulerConfig] VLLM_SPYRE_WARMUP_PROMPT_LENS =",
+                  wup_prompt_lens)
+            print("[SchedulerConfig] VLLM_SPYRE_WARMUP_NEW_TOKENS =",
+                  wup_new_tokens)
+            print("[SchedulerConfig] VLLM_SPYRE_WARMUP_BATCH_SIZES =",
+                  wup_batch_sizes)
+
+            self.spyre_warmup_shapes = tuple(
+                sorted([{
+                    'prompt_length': pl,
+                    'new_tokens': nt,
+                    'batch_size': bs
+                } for pl, nt, bs in zip(wup_prompt_lens, wup_new_tokens,
+                                        wup_batch_sizes)],
+                       key=operator.itemgetter('batch_size', 'prompt_length')))
         self.policy = policy
         self._verify_args()
 
@@ -1195,6 +1236,8 @@ class DeviceConfig:
                 self.device_type = "cuda"
             elif current_platform.is_neuron():
                 self.device_type = "neuron"
+            elif current_platform.is_spyre():
+                self.device_type = "spyre"
             elif current_platform.is_hpu():
                 self.device_type = "hpu"
             elif current_platform.is_openvino():
@@ -1212,7 +1255,7 @@ class DeviceConfig:
             self.device_type = device
 
         # Some device types require processing inputs on CPU
-        if self.device_type in ["neuron", "openvino"]:
+        if self.device_type in ["neuron", "spyre", "openvino"]:
             self.device = torch.device("cpu")
         elif self.device_type in ["tpu"]:
             self.device = None

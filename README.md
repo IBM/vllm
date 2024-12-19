@@ -15,6 +15,13 @@ Easy, fast, and cheap LLM serving for everyone
 
 ---
 
+## What is the purpose of this fork?
+
+This is a fork of vLLM that we are using to develop support for IBM's AI accelerator (Spyre). 
+The idea is that the main branch of this repo should not diverge significantly from upstream beyond changes required to enable Spyre.
+We will try to rebase against upstream frequently and we plan to contribute these changes to the upstream repository in the future. 
+
+---
 *Latest News* 🔥
 - [2024/11] We hosted [the seventh vLLM meetup](https://lu.ma/h0qvrajz) with Snowflake! Please find the meetup slides [here](https://docs.google.com/presentation/d/1e3CxQBV3JsfGp30SwyvS3eM_tW-ghOhJ9PAJGK6KR54/edit?usp=sharing).
 - [2024/10] We have just created a developer slack ([slack.vllm.ai](https://slack.vllm.ai)) focusing on coordinating contributions and discussing features. Please feel free to join us there!

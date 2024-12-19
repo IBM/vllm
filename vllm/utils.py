@@ -726,6 +726,9 @@ def is_pin_memory_available() -> bool:
     elif current_platform.is_neuron():
         print_warning_once("Pin memory is not supported on Neuron.")
         return False
+    elif current_platform.is_spyre():
+        print_warning_once("Pin memory is not supported on Spyre device.")
+        return False
     elif current_platform.is_hpu():
         print_warning_once("Pin memory is not supported on HPU.")
         return False

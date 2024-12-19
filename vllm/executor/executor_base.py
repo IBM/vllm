@@ -12,8 +12,8 @@ class ExecutorBase(ABC):
     """Base class for all executors.
 
     An executor is responsible for executing the model on a specific device
-    type (e.g., CPU, GPU, Neuron, etc.). Or it can be a distributed executor
-    that can execute the model on multiple devices.
+    type (e.g., CPU, GPU, Neuron, Spyre, etc.). Or it can be a distributed
+    executor that can execute the model on multiple devices.
     """
 
     uses_ray: bool  # whether the executor uses Ray for orchestration.

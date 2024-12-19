@@ -872,6 +872,9 @@ class Scheduler:
         ignored_seq_groups: List[SequenceGroup] = []
         seq_groups: List[ScheduledSequenceGroup] = []
 
+        applicable_spyre_warmup_shapes = list(
+            self.scheduler_config.spyre_warmup_shapes)
+
         waiting_queue = self.waiting
 
         leftover_waiting_sequences: Deque[SequenceGroup] = deque()
@@ -941,6 +944,54 @@ class Scheduler:
                                                num_new_seqs=num_new_seqs)):
                 break
 
+            # check if current request can be scheduled based on the applicable
+            # spyre warmup shapes
+            if self.scheduler_config.spyre_scheduling_enabled:
+                max_tokens = 0
+                if seq_group.sampling_params is not None and\
+                        seq_group.sampling_params.max_tokens is not None:
+                    max_tokens = seq_group.sampling_params.max_tokens
+                updated_spyre_warmup_shapes = [
+                    shape for shape in applicable_spyre_warmup_shapes
+                    if num_new_tokens <= shape['prompt_length']
+                    and max_tokens <= shape['new_tokens']
+                    and len(seq_groups) < shape['batch_size']
+                ]
+                if not updated_spyre_warmup_shapes:
+                    if not seq_groups:
+                        # request was tested against all spyre warmup shapes:
+                        # request cannot be processed
+                        if (seq_group.sampling_params is not None
+                                and seq_group.sampling_params.max_tokens
+                                is not None):
+                            logger.warning(
+                                "No applicable warmup shape exists for "
+                                "combination of prompt length (%d tokens) "
+                                "and maximum number of output tokens to be "
+                                "generated (%d tokens)", num_new_tokens,
+                                seq_group.sampling_params.max_tokens)
+                        else:
+                            logger.warning(
+                                "No applicable warmup shape exists for "
+                                "combination of prompt length (%d tokens) "
+                                "and undefined maximum number of output "
+                                "tokens", num_new_tokens)
+                        for seq in waiting_seqs:
+                            seq.status = SequenceStatus.FINISHED_IGNORED
+                        ignored_seq_groups.append(seq_group)
+                        waiting_queue.popleft()
+                        continue
+                    else:
+                        # request was only tested against spyre warmup shapes
+                        # that remain after processing previous requests in
+                        # waiting queue: request will be evaluated again in
+                        # a future scheduling step
+                        leftover_waiting_sequences.appendleft(seq_group)
+                        waiting_queue.popleft()
+                        continue
+                else:
+                    applicable_spyre_warmup_shapes = updated_spyre_warmup_shapes
+
             # Can schedule this request.
             if curr_loras is not None and lora_int_id > 0:
                 curr_loras.add(lora_int_id)
@@ -969,6 +1020,15 @@ class Scheduler:
                                        token_chunk_size=num_new_tokens))
             budget.add_num_batched_tokens(seq_group.request_id, num_new_tokens)
             budget.add_num_seqs(seq_group.request_id, num_new_seqs)
+
+            # Check if number of scheduled requests has reached the maximum
+            # batch size of the applicable warmup shapes
+            if self.scheduler_config.spyre_scheduling_enabled and len(
+                    seq_groups) >= max([
+                        shape['batch_size']
+                        for shape in applicable_spyre_warmup_shapes
+                    ]):
+                break
 
         # Queue requests that couldn't be scheduled.
         waiting_queue.extendleft(leftover_waiting_sequences)
@@ -1007,8 +1067,11 @@ class Scheduler:
         running_scheduled = SchedulerRunningOutputs.create_empty()
         swapped_in = SchedulerSwappedInOutputs.create_empty()
 
-        # If any requests are swapped, prioritized swapped requests.
-        if not self.swapped:
+        # Schedule new prefills only when no requests have been swapped
+        # and all previous decodes have completed.
+        if not self.swapped and (
+                not self.scheduler_config.spyre_scheduling_enabled
+                or not self.running):
             prefills = self._schedule_prefills(budget,
                                                curr_loras,
                                                enable_chunking=False)
@@ -1198,8 +1261,13 @@ class Scheduler:
             # chunked-prefill are enabled together.
             assert self.scheduler_config.is_multi_step and enable_chunking
 
-        return self.block_manager.can_append_slots(
-            seq_group=seq_group, num_lookahead_slots=num_lookahead_slots)
+        if self.scheduler_config.spyre_scheduling_enabled:
+            # heuristic below doesn't make sense when using very large
+            # blocks
+            return True
+        else:
+            return self.block_manager.can_append_slots(
+                seq_group=seq_group, num_lookahead_slots=num_lookahead_slots)
 
     def _allow_async_output_proc(self, seq_group: SequenceGroup) -> bool:
         # async_output_proc is allowed only when we have a single sequence
