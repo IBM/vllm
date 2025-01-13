@@ -2,8 +2,6 @@ import logging
 import os
 from typing import Callable, Dict
 
-import torch
-
 import vllm.envs as envs
 
 logger = logging.getLogger(__name__)
@@ -58,6 +56,7 @@ def load_general_plugins():
     # see https://github.com/vllm-project/vllm/issues/10480
     os.environ['TORCHINDUCTOR_COMPILE_THREADS'] = '1'
     # see https://github.com/vllm-project/vllm/issues/10619
+    import torch._inductor.config
     torch._inductor.config.compile_threads = 1
 
     from vllm.platforms import current_platform
