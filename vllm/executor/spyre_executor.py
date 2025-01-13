@@ -13,18 +13,6 @@ from vllm.worker.worker_base import WorkerBase, WorkerWrapperBase
 logger = init_logger(__name__)
 
 
-def create_worker(worker_module_name: str, worker_class_name: str,
-                  worker_class_fn: Optional[Callable[[], Type[WorkerBase]]],
-                  **kwargs):
-    wrapper = WorkerWrapperBase(
-        worker_module_name=worker_module_name,
-        worker_class_name=worker_class_name,
-        worker_class_fn=worker_class_fn,
-    )
-    wrapper.init_worker(**kwargs)
-    return wrapper.worker
-
-
 class SpyreExecutor(ExecutorBase):
 
     uses_ray: bool = False
@@ -101,10 +89,17 @@ class SpyreExecutor(ExecutorBase):
                        local_rank: int = 0,
                        rank: int = 0,
                        distributed_init_method: Optional[str] = None):
-        return create_worker(**self._get_create_worker_kwargs(
+
+        wrapper = WorkerWrapperBase(vllm_config=self.vllm_config)
+
+        assert self.distributed_init_method is not None
+
+        wrapper.init_worker(**self._get_create_worker_kwargs(
             local_rank=local_rank,
             rank=rank,
             distributed_init_method=distributed_init_method))
+
+        return wrapper.worker
 
     def determine_num_available_blocks(self) -> Tuple[int, int]:
         """Determine the number of available KV blocks by invoking the
