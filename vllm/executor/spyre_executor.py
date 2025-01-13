@@ -1,5 +1,5 @@
 import os
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from vllm.executor.executor_base import ExecutorAsyncBase, ExecutorBase
 from vllm.logger import init_logger
@@ -8,7 +8,7 @@ from vllm.model_executor.layers.sampler import SamplerOutput
 from vllm.sequence import ExecuteModelRequest
 from vllm.utils import (get_distributed_init_method, get_ip, get_open_port,
                         make_async)
-from vllm.worker.worker_base import WorkerBase, WorkerWrapperBase
+from vllm.worker.worker_base import WorkerWrapperBase
 
 logger = init_logger(__name__)
 
@@ -60,31 +60,6 @@ class SpyreExecutor(ExecutorBase):
             or (rank % self.parallel_config.tensor_parallel_size == 0),
         )
 
-    def _get_worker_module_and_class(
-            self) -> Tuple[str, str, Optional[Callable[[], Type[WorkerBase]]]]:
-        worker_class_fn = None
-        worker_module_name = "vllm.worker.spyre_worker"
-        worker_class_name = "SpyreWorker"
-        return (worker_module_name, worker_class_name, worker_class_fn)
-
-    def _get_create_worker_kwargs(
-            self,
-            local_rank: int = 0,
-            rank: int = 0,
-            distributed_init_method: Optional[str] = None) -> Dict:
-
-        worker_kwargs = self._get_worker_kwargs(local_rank, rank,
-                                                distributed_init_method)
-
-        (worker_module_name, worker_class_name,
-         worker_class_fn) = self._get_worker_module_and_class()
-        worker_kwargs.update(
-            worker_module_name=worker_module_name,
-            worker_class_name=worker_class_name,
-            worker_class_fn=worker_class_fn,
-        )
-        return worker_kwargs
-
     def _create_worker(self,
                        local_rank: int = 0,
                        rank: int = 0,
@@ -92,9 +67,7 @@ class SpyreExecutor(ExecutorBase):
 
         wrapper = WorkerWrapperBase(vllm_config=self.vllm_config)
 
-        assert self.distributed_init_method is not None
-
-        wrapper.init_worker(**self._get_create_worker_kwargs(
+        wrapper.init_worker(**self._get_worker_kwargs(
             local_rank=local_rank,
             rank=rank,
             distributed_init_method=distributed_init_method))

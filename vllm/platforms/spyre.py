@@ -37,4 +37,5 @@ class SpyrePlatform(Platform):
             if envs.VLLM_USE_V1:
                 raise NotImplementedError
             else:
-                parallel_config.worker_cls = "vllm.worker.worker.SpyreWorker"
+                parallel_config.worker_cls = \
+                    "vllm.worker.spyre_worker.SpyreWorker"
