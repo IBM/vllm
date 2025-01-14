@@ -1,5 +1,7 @@
 from typing import TYPE_CHECKING, Optional
 
+from vllm.logger import init_logger
+
 if TYPE_CHECKING:
     from vllm.config import VllmConfig
 else:
@@ -8,6 +10,7 @@ import vllm.envs as envs
 
 from .interface import Platform, PlatformEnum
 
+logger = init_logger(__name__)
 
 class SpyrePlatform(Platform):
     _enum = PlatformEnum.SPYRE
@@ -39,3 +42,14 @@ class SpyrePlatform(Platform):
             else:
                 parallel_config.worker_cls = \
                     "vllm.worker.spyre_worker.SpyreWorker"
+
+        cache_config = vllm_config.cache_config
+        if cache_config:
+            # spyre needs block_size = max_model_len
+            vllm_config.cache_config.block_size = \
+                vllm_config.model_config.max_model_len
+
+    @classmethod
+    def is_pin_memory_available(cls) -> bool:
+        logger.warning("Pin memory is not supported on Spyre.")
+        return False
