@@ -12,6 +12,7 @@ from .interface import Platform, PlatformEnum
 
 logger = init_logger(__name__)
 
+
 class SpyrePlatform(Platform):
     _enum = PlatformEnum.SPYRE
     device_name: str = "spyre"
