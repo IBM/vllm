@@ -134,7 +134,7 @@ def compare_results(model: str, prompts: List[str],
         print()
 
         assert DISABLE_ASSERTS or backend == 'sendnn_decoder' or\
-            hf_result['text'] == vllm_result['text']
+            hf_result['token_ids'] == vllm_result['token_ids']
 
         if len(hf_result['tokens']) > 0:
             print("   token id. token               logprob      "
