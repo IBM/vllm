@@ -25,5 +25,5 @@ jobs:
           mkdir -p /models && \
           ln -s /root/.cache/huggingface/hub/models--JackFram--llama-160m/snapshots/${VARIANT} /models/llama-194m && \
           pip install pytest sentence-transformers && \
-          python3.12 -m pytest tests/spyre
+          python3.12 -m pytest tests/spyre -v
         '''
