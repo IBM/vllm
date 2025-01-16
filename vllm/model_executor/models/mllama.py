@@ -32,9 +32,8 @@ from transformers.models.mllama.processing_mllama import (
 
 import vllm.distributed.parallel_state as ps
 from vllm.attention import Attention, AttentionMetadata, AttentionType
-from vllm.attention.backends.flash_attn import FlashAttentionMetadata
-from vllm.attention.backends.xformers import XFormersMetadata
 from vllm.attention.ops.paged_attn import PagedAttention
+from vllm.attention.selector import _Backend
 from vllm.config import VllmConfig
 from vllm.distributed import get_tensor_model_parallel_world_size
 from vllm.inputs import (INPUT_REGISTRY, DummyData, EncoderDecoderInputs,
@@ -123,6 +122,13 @@ def input_processor_for_mllama(
         image_data = [image_data]
 
     assert is_list_of(image_data, Image.Image)
+
+    num_image_tokens = dec_inputs['prompt_token_ids'].count(
+        MLLAMA_IMAGE_TOKEN_ID)
+    if num_image_tokens != len(image_data):
+        raise ValueError(
+            f"The number of image tokens ({num_image_tokens}) must be"
+            f" the same as the number of images ({len(image_data)})")
 
     # Since only the last group of consecutive images
     # are attended by the decoded tokens, we only need to
@@ -771,6 +777,7 @@ class MllamaTextCrossAttention(nn.Module):
             self.scaling,
             self.num_local_key_value_heads,
             prefix=f"{prefix}.attn",
+            attn_type=AttentionType.ENCODER_DECODER,
         )
 
     def forward(
@@ -806,13 +813,9 @@ class MllamaTextCrossAttention(nn.Module):
                                                kv_range_for_decode,
                                                attn_metadata)
         else:
-            output = self.attn(q.view(-1,
-                                      self.num_local_heads * self.head_dim),
-                               k,
-                               v,
-                               kv_cache,
-                               attn_metadata,
-                               attn_type=AttentionType.ENCODER_DECODER)
+            output = self.attn(
+                q.view(-1, self.num_local_heads * self.head_dim), k, v,
+                kv_cache, attn_metadata)
         out, _ = self.o_proj(output)
         return out
 
@@ -828,7 +831,8 @@ class MllamaTextCrossAttention(nn.Module):
     ) -> torch.Tensor:
         # Skip writing kv-cache for the initial profiling run.
         if len(kv_cache.shape) > 1:
-            if isinstance(attn_metadata, FlashAttentionMetadata):
+            if self.attn.backend in (_Backend.FLASH_ATTN,
+                                     _Backend.FLASH_ATTN_VLLM_V1):
                 cached_k = torch.cat([k[s:e] for s, e in kv_range_for_decode])
                 cached_v = torch.cat([v[s:e] for s, e in kv_range_for_decode])
                 torch.ops._C_cache_ops.reshape_and_cache_flash(
@@ -842,7 +846,7 @@ class MllamaTextCrossAttention(nn.Module):
                     1.0,
                     1.0,
                 )
-            elif isinstance(attn_metadata, XFormersMetadata):
+            elif self.attn.backend in (_Backend.XFORMERS, _Backend.TORCH_SDPA):
                 key_cache, value_cache = PagedAttention.split_kv_cache(
                     kv_cache, self.num_local_key_value_heads, self.head_dim)
                 cached_k = torch.cat([k[s:e] for s, e in kv_range_for_decode])
@@ -852,9 +856,9 @@ class MllamaTextCrossAttention(nn.Module):
                     attn_metadata.cross_slot_mapping, "auto", 1.0, 1.0)
             else:
                 raise ValueError(
-                    f"Unsupported AttentionMetadata {type(attn_metadata)} "
-                    f"class found. Expected the AttentionMetadata to "
-                    f"be either XFormersMetadata or FlashAttentionMetadata.")
+                    f"Unsupported Attention backend {self.attn.backend} "
+                    "enum found. Expected the Attention backend to be "
+                    "FLASH_ATTN, FLASH_ATTN_VLLM_V1, XFORMERS or TORCH_SDPA.")
 
         # We have to call torch.sdpa for prefill when using a
         # custom cross-attention mask. Because the mask is not a
@@ -1104,20 +1108,6 @@ class MllamaForCausalLM(nn.Module):
 @INPUT_REGISTRY.register_input_processor(input_processor_for_mllama)
 class MllamaForConditionalGeneration(nn.Module, SupportsMultiModal):
     # BitandBytes specific attributes
-    default_bitsandbytes_target_modules = [
-        ".gate_proj.",
-        ".down_proj.",
-        ".up_proj.",
-        ".q_proj.",
-        ".k_proj.",
-        ".v_proj.",
-        ".o_proj.",
-        ".fc1.",
-        ".fc2.",
-        # The `multi_modal_projector` is at the top level of the model,
-        # so we can't add a dot in front of it.
-        "multi_modal_projector."
-    ]
     bitsandbytes_stacked_params_mapping = {
         # shard_name, weight_name, index
         "q_proj": ("qkv_proj", 0),
@@ -1510,6 +1500,8 @@ def convert_sparse_cross_attention_mask_to_dense(
             dense_mask[seq_start + start:seq_start + end,
                        tile_start:tile_start + tile] = 1
             tile_start += tile
+        assert ts != -1
+        assert td != 0
         tile_range_for_decode.append((ts, ts + td))
         seq_start += length
 

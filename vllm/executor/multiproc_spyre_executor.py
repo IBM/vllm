@@ -11,7 +11,7 @@ import torch
 
 from vllm.executor.multiproc_worker_utils import (ProcessWorkerWrapper,
                                                   ResultHandler, WorkerMonitor)
-from vllm.executor.spyre_executor import SpyreExecutor, create_worker
+from vllm.executor.spyre_executor import SpyreExecutor
 from vllm.logger import init_logger
 from vllm.lora.request import LoRARequest
 from vllm.model_executor.layers.sampler import SamplerOutput
@@ -123,12 +123,11 @@ class MultiprocessingSpyreExecutor(SpyreExecutor):
                 worker = ProcessWorkerWrapper(
                     result_handler,
                     partial(
-                        create_worker,
-                        **self._get_create_worker_kwargs(
-                            rank=rank,
-                            local_rank=rank,
-                            distributed_init_method=distributed_init_method,
-                        )))
+                        self._create_worker,
+                        rank=rank,
+                        local_rank=rank,
+                        distributed_init_method=distributed_init_method,
+                    ))
                 self.workers.append(worker)
                 if rank % tensor_parallel_size == 0:
                     self.tp_driver_workers.append(worker)
