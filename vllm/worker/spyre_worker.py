@@ -118,8 +118,11 @@ class SpyreWorker(LoraNotSupportedWorkerBase):
                   'rb') as f:
             config = json.load(f)
 
-        bos_token_id, eos_token_id = int(config["bos_token_id"]), int(
-            config["eos_token_id"])
+        restricted_tokens = []
+        if tok := config.get("bos_token_id") is not None:
+            restricted_tokens.append(int(tok))
+        if tok := config.get("eos_token_id") is not None:
+            restricted_tokens.append(int(tok))
 
         print("[SpyreWorker] load model...")
         # TODO: check additionally if the Spyre card has enough memory
@@ -161,8 +164,7 @@ class SpyreWorker(LoraNotSupportedWorkerBase):
                   f"decoding {num_decode_tokens} tokens with batch "
                   f"size {batch_size}")
             self._warmup_spyre_fixed_size(prompt_len, num_decode_tokens,
-                                          (bos_token_id, eos_token_id),
-                                          batch_size)
+                                          restricted_tokens, batch_size)
         all_warmup_end_t = time.time()
         all_warmup_total_t = all_warmup_end_t - all_warmup_start_t
         print(f"[SpyreWorker] All warmups for "
