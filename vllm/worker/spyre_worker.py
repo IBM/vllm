@@ -9,8 +9,7 @@ import torch
 import torch.distributed as dist
 
 import vllm.envs as envs
-from vllm.config import (CacheConfig, DeviceConfig, ModelConfig,
-                         ParallelConfig, SchedulerConfig)
+from vllm.config import VllmConfig
 from vllm.distributed import (ensure_model_parallel_initialized,
                               init_distributed_environment)
 from vllm.model_executor import set_random_seed
@@ -19,7 +18,7 @@ from vllm.model_executor.model_loader import spyre_setup
 from vllm.sequence import ExecuteModelRequest
 from vllm.worker.spyre_embedding_model_runner import SpyreEmbeddingModelRunner
 from vllm.worker.spyre_model_runner import SpyreModelRunner
-from vllm.worker.worker_base import LoraNotSupportedWorkerBase
+from vllm.worker.worker_base import LoraNotSupportedWorkerBase, WorkerBase
 
 
 class SpyreWorker(LoraNotSupportedWorkerBase):
@@ -28,27 +27,19 @@ class SpyreWorker(LoraNotSupportedWorkerBase):
 
     def __init__(
         self,
-        model_config: ModelConfig,
-        parallel_config: ParallelConfig,
-        scheduler_config: SchedulerConfig,
-        device_config: DeviceConfig,
-        cache_config: CacheConfig,
+        vllm_config: VllmConfig,
         local_rank: int,
         rank: int,
         distributed_init_method: str,
         is_driver_worker: bool = False,
     ) -> None:
-        self.model_config = model_config
-        self.parallel_config = parallel_config
-        self.scheduler_config = scheduler_config
-        self.device_config = device_config
-        self.cache_config = cache_config
+        WorkerBase.__init__(self, vllm_config=vllm_config)
         self.local_rank = local_rank
         self.rank = rank
         self.distributed_init_method = distributed_init_method
         self.is_driver_worker = is_driver_worker
-        if parallel_config and is_driver_worker:
-            assert rank % parallel_config.tensor_parallel_size == 0, \
+        if self.parallel_config and is_driver_worker:
+            assert rank % self.parallel_config.tensor_parallel_size == 0, \
                    "Driver worker should be rank 0 of tensor parallel group."
         if self.model_config.trust_remote_code:
             # note: lazy import to avoid importing torch before initializing
@@ -57,11 +48,11 @@ class SpyreWorker(LoraNotSupportedWorkerBase):
 
         if self.model_config.task == "embed":
             self.model_runner: SpyreModelRunner = SpyreEmbeddingModelRunner(
-                model_config, parallel_config, scheduler_config, device_config)
+                self.model_config, self.parallel_config, self.scheduler_config, self.device_config)
         else:
-            self.model_runner = SpyreModelRunner(model_config, parallel_config,
-                                                 scheduler_config,
-                                                 device_config)
+            self.model_runner = SpyreModelRunner(self.model_config, self.parallel_config,
+                                                 self.scheduler_config,
+                                                 self.device_config)
         self._env_initialized = False
 
     def init_distributed_environment(self) -> None:
