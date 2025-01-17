@@ -58,13 +58,6 @@ class SpyreWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
     def init_distributed_environment(self) -> None:
         """Initialize the distributed environment."""
 
-        init_distributed_environment(
-            world_size=self.parallel_config.world_size,
-            rank=self.rank,
-            distributed_init_method="env://",
-            backend="gloo",
-        )
-
         torch._C._distributed_c10d._register_process_group(
             "default", dist.group.WORLD)
 
@@ -77,10 +70,6 @@ class SpyreWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
         # A small all_reduce for warmup.
         torch.distributed.all_reduce(torch.zeros(1).cpu())
 
-        ensure_model_parallel_initialized(
-            self.parallel_config.tensor_parallel_size,
-            self.parallel_config.pipeline_parallel_size,
-        )
 
     def init_device(self) -> None:
 
@@ -90,12 +79,25 @@ class SpyreWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
                 LoadEndianness.LITTLE)
 
         if not self._env_initialized:
+
+            init_distributed_environment(
+                world_size=self.parallel_config.world_size,
+                rank=self.rank,
+                distributed_init_method="env://",
+                backend="gloo",
+            )
+
             if self.parallel_config.world_size > 1:
                 self.init_distributed_environment()
             elif envs.VLLM_SPYRE_DYNAMO_BACKEND in [
                     "sendnn", "sendnn_decoder"
             ]:
                 spyre_setup.spyre_setup(rank=0, world_size=1, verbose=True)
+
+            ensure_model_parallel_initialized(
+                self.parallel_config.tensor_parallel_size,
+                self.parallel_config.pipeline_parallel_size,
+            )
 
             self._env_initialized = True
 
