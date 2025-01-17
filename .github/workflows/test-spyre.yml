@@ -25,5 +25,8 @@ jobs:
           mkdir -p /models && \
           ln -s /root/.cache/huggingface/hub/models--JackFram--llama-160m/snapshots/${VARIANT} /models/llama-194m && \
           pip install pytest sentence-transformers && \
+          export MASTER_PORT=12355 && \
+          export MASTER_ADDR=localhost && \
+          export DISTRIBUTED_STRATEGY_IGNORE_MODULES=WordEmbedding && \
           python3.12 -m pytest tests/spyre -v
         '''
