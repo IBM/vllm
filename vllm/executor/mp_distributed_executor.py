@@ -129,6 +129,10 @@ class MultiprocessingDistributedExecutor(DistributedExecutorBase):
             sent_method = cloudpickle.dumps(method)
         del method
 
+        print("[MultiprocessingDistributedExecutor::_run_workers] method: ", method)
+        print("[MultiprocessingDistributedExecutor::_run_workers] args: ", args)
+        print("[MultiprocessingDistributedExecutor::_run_workers] async_run_tensor_parallel_workers_only: ", async_run_tensor_parallel_workers_only)
+        
         if max_concurrent_workers:
             raise NotImplementedError(
                 "max_concurrent_workers is not supported yet.")

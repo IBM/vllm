@@ -232,8 +232,10 @@ class DistributedExecutorBase(ExecutorBase):
                 "start_worker_execution_loop",
                 async_run_tensor_parallel_workers_only=True)
 
+        print("[DistributedExecutorBase::execute_model] got here")
         # Only the driver worker returns the sampling results.
         driver_outputs = self._driver_execute_model(execute_model_req)
+        print("[DistributedExecutorBase::execute_model] driver_outputs: ", driver_outputs)
         assert driver_outputs is not None
         return driver_outputs
 

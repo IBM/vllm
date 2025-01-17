@@ -18,10 +18,10 @@ from vllm.model_executor.model_loader import spyre_setup
 from vllm.sequence import ExecuteModelRequest
 from vllm.worker.spyre_embedding_model_runner import SpyreEmbeddingModelRunner
 from vllm.worker.spyre_model_runner import SpyreModelRunner
-from vllm.worker.worker_base import LoraNotSupportedWorkerBase, WorkerBase
+from vllm.worker.worker_base import LoraNotSupportedWorkerBase, WorkerBase, LocalOrDistributedWorkerBase, WorkerInput
 
 
-class SpyreWorker(LoraNotSupportedWorkerBase):
+class SpyreWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
     """A worker class that executes the model on a group of Spyre cores.
     """
 
@@ -52,7 +52,7 @@ class SpyreWorker(LoraNotSupportedWorkerBase):
         else:
             self.model_runner = SpyreModelRunner(self.model_config, self.parallel_config,
                                                  self.scheduler_config,
-                                                 self.device_config)
+                                                 self.device_config, self.is_driver_worker)
         self._env_initialized = False
 
     def init_distributed_environment(self) -> None:
@@ -297,6 +297,7 @@ class SpyreWorker(LoraNotSupportedWorkerBase):
         self.cache_config.num_gpu_blocks = num_gpu_blocks
         self.cache_config.num_cpu_blocks = num_cpu_blocks
 
+    '''
     # TODO: why not inference mode?
     #@torch.inference_mode()
     def execute_model(
@@ -321,6 +322,7 @@ class SpyreWorker(LoraNotSupportedWorkerBase):
         # Spyre worker only supports single-step output. Wrap the output in a
         # list to conform to interface.
         return [output]
+    '''
 
     def get_cache_block_size_bytes(self) -> int:
         """Determine the size in bytes of a cache block.
@@ -328,3 +330,19 @@ class SpyreWorker(LoraNotSupportedWorkerBase):
         This is required for speculative decoding; it is not yet implemented.
         """
         raise NotImplementedError
+
+    @property
+    def do_metadata_broadcast(self) -> bool:
+        return True
+
+    @property
+    def kv_cache(self) -> Optional[List[List[torch.Tensor]]]:
+        return None
+
+    def prepare_worker_input(
+            self, execute_model_req: ExecuteModelRequest) -> WorkerInput:
+        return WorkerInput(num_seq_groups=len(
+            execute_model_req.seq_group_metadata_list), )
+
+    def execute_worker(self, worker_input: WorkerInput) -> None:
+        pass
