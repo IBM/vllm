@@ -84,11 +84,9 @@ class WorkerBase(ABC):
         You can stop the loop by executing a driver worker with an empty output.
         See `stop_remote_worker_execution_loop` for more details.
         """
-        print("[WorkerBase::start_worker_execution_loop] hello")
         with self.current_platform.inference_mode():
             while True:
                 output = self.execute_model(execute_model_req=None)
-                print("[WorkerBase::start_worker_execution_loop] output: ", output)
                 if output is None:
                     return None
 
