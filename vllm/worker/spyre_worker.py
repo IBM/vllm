@@ -255,10 +255,12 @@ class SpyreWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
             self.model_runner._update_mask()
             self.model_runner._update_position_ids()
 
+            '''
             if past_key_value_states is not None:
                 for layer in past_key_value_states:
                     for tensor in layer:
                         torch._dynamo.mark_dynamic(tensor, 2)
+            '''
 
             logits, past_key_value_states = self.model_runner.\
                 _raw_model_forward(
