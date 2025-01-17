@@ -255,12 +255,10 @@ class SpyreWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
             self.model_runner._update_mask()
             self.model_runner._update_position_ids()
 
-            '''
             if past_key_value_states is not None:
                 for layer in past_key_value_states:
                     for tensor in layer:
                         torch._dynamo.mark_dynamic(tensor, 2)
-            '''
 
             logits, past_key_value_states = self.model_runner.\
                 _raw_model_forward(
@@ -300,33 +298,6 @@ class SpyreWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
 
         self.cache_config.num_gpu_blocks = num_gpu_blocks
         self.cache_config.num_cpu_blocks = num_cpu_blocks
-
-    '''
-    # TODO: why not inference mode?
-    #@torch.inference_mode()
-    def execute_model(
-        self,
-        execute_model_req: Optional[ExecuteModelRequest] = None
-    ) -> Optional[List[SamplerOutput]]:
-
-        torch.set_grad_enabled(False)
-        if execute_model_req is None:
-            return None
-        finished_requests_ids = execute_model_req.finished_requests_ids
-        seq_group_metadata_list = execute_model_req.seq_group_metadata_list
-        num_seq_groups = len(seq_group_metadata_list)
-
-        # If there is no input, we don't need to execute the model.
-        if num_seq_groups == 0:
-            return []
-
-        output = self.model_runner.execute_model(seq_group_metadata_list,
-                                                 finished_requests_ids)
-
-        # Spyre worker only supports single-step output. Wrap the output in a
-        # list to conform to interface.
-        return [output]
-    '''
 
     def get_cache_block_size_bytes(self) -> int:
         """Determine the size in bytes of a cache block.

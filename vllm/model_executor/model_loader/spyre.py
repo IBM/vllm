@@ -85,12 +85,10 @@ class SpyreCausalLM(nn.Module):
         self.past_key_value_states = past_key_value_states
 
         # mark dynamic
-        '''
         if self.past_key_value_states is not None:
             for layer in self.past_key_value_states:
                 for tensor in layer:
                     torch._dynamo.mark_dynamic(tensor, 2)
-        '''
 
         # removing batch padding sequences to compute logits
         batch_size = input_ids.shape[0]
@@ -191,12 +189,6 @@ class SpyreCausalLM(nn.Module):
                 f" {_prev} to {torch._dynamo.config.cache_size_limit} to "
                 f"accommodate prompt size of {max_prompt_length} and "
                 f"decode tokens of {max_decode_length}")
-
-        if envs.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
-            torch._dynamo.config.assume_static_by_default = True
-            torch._dynamo.config.dynamic_shapes = False
-            torch._dynamo.config.automatic_dynamic_shapes = False
-
 
         if envs.VLLM_SPYRE_DYNAMO_BACKEND in BACKEND_LIST:
             self.model = torch.compile(self.model,
