@@ -143,7 +143,7 @@ class SpyreCausalLM(nn.Module):
                 "desc_act": quant_cfg['desc_act'],
             }
             data_type = None
-            model_source = "llama_gptq_hf_unfused_aiu"
+            model_source = "hf_gptq_aiu"
         else:
             linear_config = {"linear_type": "torch_linear"}
             data_type = self.dtype

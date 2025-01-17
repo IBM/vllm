@@ -919,8 +919,9 @@ class Scheduler:
         ignored_seq_groups: List[SequenceGroup] = []
         seq_groups: List[ScheduledSequenceGroup] = []
 
-        applicable_spyre_warmup_shapes = list(
-            self.scheduler_config.spyre_warmup_shapes)
+        if self.scheduler_config.spyre_scheduling_enabled:
+            applicable_spyre_warmup_shapes = list(
+                self.scheduler_config.spyre_warmup_shapes)
 
         waiting_queue = self.waiting
 
