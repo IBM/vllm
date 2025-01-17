@@ -17,7 +17,9 @@ from vllm.worker.model_runner_base import ModelRunnerBase, ModelRunnerInputBase,
 
 logger = init_logger(__name__)
 
-TModelInputForSpyre = TypeVar('TModelInputForSpyre', bound="ModelInputForSpyre")
+TModelInputForSpyre = TypeVar('TModelInputForSpyre',
+                              bound="ModelInputForSpyre")
+
 
 @dataclass(frozen=True)
 class ModelInputForSpyre(ModelRunnerInputBase):
@@ -307,7 +309,8 @@ class SpyreModelRunner(ModelRunnerBase):
             return []
 
         # Compute the logits.
-        logits = self.model.compute_logits(hidden_states, model_input.sampling_metadata)
+        logits = self.model.compute_logits(hidden_states,
+                                           model_input.sampling_metadata)
 
         # Sample the next token.
         output = self.model.sample(

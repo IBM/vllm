@@ -48,11 +48,14 @@ class SpyreWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
 
         if self.model_config.task == "embed":
             self.model_runner: SpyreModelRunner = SpyreEmbeddingModelRunner(
-                self.model_config, self.parallel_config, self.scheduler_config, self.device_config)
+                self.model_config, self.parallel_config, self.scheduler_config,
+                self.device_config)
         else:
-            self.model_runner = SpyreModelRunner(self.model_config, self.parallel_config,
+            self.model_runner = SpyreModelRunner(self.model_config,
+                                                 self.parallel_config,
                                                  self.scheduler_config,
-                                                 self.device_config, self.is_driver_worker)
+                                                 self.device_config,
+                                                 self.is_driver_worker)
         self._env_initialized = False
 
     def init_distributed_environment(self) -> None:
@@ -69,7 +72,6 @@ class SpyreWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
 
         # A small all_reduce for warmup.
         torch.distributed.all_reduce(torch.zeros(1).cpu())
-
 
     def init_device(self) -> None:
 
