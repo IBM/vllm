@@ -59,10 +59,9 @@ class SpyreCausalLM(nn.Module):
         input_ids: torch.Tensor,
         positions: torch.Tensor,
         masks: torch.Tensor,
-        seq_group_metadata_list: List[SequenceGroupMetadata],
+        is_prompt: bool,
     ) -> torch.Tensor:
 
-        is_prompt = seq_group_metadata_list[0].is_prompt
         if is_prompt:
             self.past_key_value_states = None
 

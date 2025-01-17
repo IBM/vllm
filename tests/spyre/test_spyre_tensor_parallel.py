@@ -12,7 +12,7 @@ from spyre_util import (compare_results, generate_hf_output,
 from vllm import SamplingParams
 
 
-@pytest.mark.skip("Skip until failure is resolved.")
+#@pytest.mark.skip("Skip until failure is resolved.")
 @pytest.mark.parametrize("model", ["/models/llama-194m"])
 @pytest.mark.parametrize("prompts", [[
     "Provide a list of instructions for preparing"

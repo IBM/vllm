@@ -1,4 +1,5 @@
 from typing import TYPE_CHECKING, Optional
+import torch
 
 from vllm.logger import init_logger
 
@@ -54,3 +55,13 @@ class SpyrePlatform(Platform):
     def is_pin_memory_available(cls) -> bool:
         logger.warning("Pin memory is not supported on Spyre.")
         return False
+
+    @classmethod
+    def inference_mode(cls):
+        """A device-specific wrapper of `torch.inference_mode`.
+
+        This wrapper is recommended because some hardware backends such as TPU
+        do not support `torch.inference_mode`. In such a case, they will fall
+        back to `torch.no_grad` by overriding this method.
+        """
+        return torch.no_grad()
