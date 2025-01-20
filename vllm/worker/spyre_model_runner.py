@@ -156,6 +156,10 @@ class SpyreModelRunner:
         #  padding to compiled batch size
         actual_batch_size = len(seq_group_metadata_list)
         padded_batch_size = self._position_ids.shape[0]
+
+        # set number of added padding sequences used for computing logits
+        self.model.num_padded_sequences = padded_batch_size - actual_batch_size
+
         while actual_batch_size < padded_batch_size:
             input_tokens.append([0])
             actual_batch_size += 1
