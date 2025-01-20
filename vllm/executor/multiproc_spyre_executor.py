@@ -16,8 +16,7 @@ from vllm.logger import init_logger
 from vllm.lora.request import LoRARequest
 from vllm.model_executor.layers.sampler import SamplerOutput
 from vllm.sequence import ExecuteModelRequest
-from vllm.utils import (get_distributed_init_method, get_open_port,
-                        get_vllm_instance_id)
+from vllm.utils import get_distributed_init_method, get_open_port
 
 logger = init_logger(__name__)
 
@@ -72,9 +71,6 @@ class MultiprocessingSpyreExecutor(SpyreExecutor):
         # Create the parallel GPU workers.
         world_size = self.parallel_config.world_size
         tensor_parallel_size = self.parallel_config.tensor_parallel_size
-
-        # Ensure that VLLM_INSTANCE_ID is set, to be inherited by workers
-        os.environ["VLLM_INSTANCE_ID"] = get_vllm_instance_id()
 
         # Disable torch async compiling which won't work with daemonic processes
         # [tom] it doesn't seme to work setting this from the code, we need to
