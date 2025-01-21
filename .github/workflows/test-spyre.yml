@@ -25,7 +25,7 @@ jobs:
           export VARIANT=$(ls /root/.cache/huggingface/hub/models--JackFram--llama-160m/snapshots/) && \
           mkdir -p /models && \
           ln -s /root/.cache/huggingface/hub/models--JackFram--llama-160m/snapshots/${VARIANT} /models/llama-194m && \
-          python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer(\"sentence-transformers/all-roberta-large-v1\")" && \
+          python3.12 -c "from sentence_transformers import SentenceTransformer; SentenceTransformer(\"sentence-transformers/all-roberta-large-v1\")" && \
           export VARIANT=$(ls /root/.cache/huggingface/hub/models--sentence-transformers--all-roberta-large-v1/snapshots/) && \
           ln -s /root/.cache/huggingface/hub/models--sentence-transformers--all-roberta-large-v1/snapshots/${VARIANT} /models/all-roberta-large-v1 && \
           python3.12 -m pytest tests/spyre -v
