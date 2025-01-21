@@ -10,7 +10,6 @@ from spyre_util import (compare_embedding_results, spyre_vllm_embeddings,
                         st_embeddings)
 
 
-@pytest.mark.skip("Skip until failure is resolved.")
 @pytest.mark.parametrize("model", ["/models/all-roberta-large-v1"])
 @pytest.mark.parametrize("prompts", [[
     "The capital of France is Paris."
