@@ -64,7 +64,7 @@ class ModelInputForSpyre(ModelRunnerInputBase):
         return cls(**tensor_dict)
 
 
-class SpyreModelRunner(ModelRunnerBase):
+class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
     def __init__(
         self,
