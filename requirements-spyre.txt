@@ -2,6 +2,6 @@
 -r requirements-common.txt
 
 # IBM foundation model stack
-ibm-fms==0.0.7
+ibm-fms==0.0.8
 
 wurlitzer
