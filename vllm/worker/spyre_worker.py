@@ -13,12 +13,13 @@ from vllm.config import VllmConfig
 from vllm.distributed import (ensure_model_parallel_initialized,
                               init_distributed_environment)
 from vllm.model_executor import set_random_seed
-from vllm.model_executor.layers.sampler import SamplerOutput
 from vllm.model_executor.model_loader import spyre_setup
 from vllm.sequence import ExecuteModelRequest
 from vllm.worker.spyre_embedding_model_runner import SpyreEmbeddingModelRunner
 from vllm.worker.spyre_model_runner import SpyreModelRunner
-from vllm.worker.worker_base import LoraNotSupportedWorkerBase, WorkerBase, LocalOrDistributedWorkerBase, WorkerInput
+from vllm.worker.worker_base import (LocalOrDistributedWorkerBase,
+                                     LoraNotSupportedWorkerBase, WorkerBase,
+                                     WorkerInput)
 
 
 class SpyreWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
@@ -49,7 +50,7 @@ class SpyreWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
         if self.model_config.task == "embed":
             self.model_runner: SpyreModelRunner = SpyreEmbeddingModelRunner(
                 self.model_config, self.parallel_config, self.scheduler_config,
-                self.device_config)
+                self.device_config, self.is_driver_worker)
         else:
             self.model_runner = SpyreModelRunner(self.model_config,
                                                  self.parallel_config,

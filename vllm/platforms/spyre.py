@@ -1,4 +1,5 @@
 from typing import TYPE_CHECKING, Optional
+
 import torch
 
 from vllm.logger import init_logger

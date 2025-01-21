@@ -11,9 +11,10 @@ from vllm.logger import init_logger
 from vllm.model_executor.layers.pooler import Pooler, PoolingType
 from vllm.model_executor.pooling_metadata import PoolingMetadata
 from vllm.pooling_params import PoolingParams
-from vllm.sequence import PoolerOutput, SequenceData, SequenceGroupMetadata
+from vllm.sequence import (IntermediateTensors, PoolerOutput, SequenceData,
+                           SequenceGroupMetadata)
 
-from .spyre_model_runner import SpyreModelRunner
+from .spyre_model_runner import ModelInputForSpyre, SpyreModelRunner
 
 logger = init_logger(__name__)
 
@@ -31,11 +32,13 @@ class SpyreEmbeddingModelRunner(SpyreModelRunner):
         parallel_config: ParallelConfig,
         scheduler_config: SchedulerConfig,
         device_config: DeviceConfig,
+        is_driver_worker: bool,
     ):
         super().__init__(model_config=model_config,
                          parallel_config=parallel_config,
                          scheduler_config=scheduler_config,
-                         device_config=device_config)
+                         device_config=device_config,
+                         is_driver_worker=is_driver_worker)
 
         pooler_config = model_config.pooler_config
         self.pooler = Pooler.from_config_with_defaults(
@@ -113,42 +116,62 @@ class SpyreEmbeddingModelRunner(SpyreModelRunner):
 
         return input_ids, position_ids, mask
 
-    def execute_model(
+    def prepare_model_input(
         self,
         seq_group_metadata_list: List[SequenceGroupMetadata],
-        finished_requests_ids: Optional[List[str]] = None,
-    ) -> Optional[PoolerOutput]:
+        virtual_engine: int = 0,
+        finished_requests_ids: Optional[List[str]] = None
+    ) -> ModelInputForSpyre:
+
         (input_tokens, input_positions, input_masks,
          pooling_metadata) = self.prepare_input_tensors(
              seq_group_metadata_list, finished_requests_ids)
+
+        return ModelInputForSpyre(input_tokens=input_tokens,
+                                  input_positions=input_positions,
+                                  input_masks=input_masks,
+                                  pooling_metadata=pooling_metadata)
+
+    def execute_model(
+        self,
+        model_input: ModelInputForSpyre,
+        kv_caches: Optional[List[torch.Tensor]] = None,
+        intermediate_tensors: Optional[IntermediateTensors] = None,
+        num_steps: int = 1,
+        **kwargs,
+    ) -> Optional[List[PoolerOutput]]:
+
         t0 = time.time()
 
         outputs = self.model(
-            input_ids=input_tokens,
+            input_ids=model_input.input_tokens,
             # Let the Embedding layer use it's default
             # because the rules can be a bit different
             # e.g. For Roberta models the inputs start
             # at padding_inx +1
             #position_ids=input_positions,
-            attention_mask=input_masks)
+            attention_mask=model_input.input_masks)
         hidden_states = outputs["last_hidden_state"]
 
         unpadded = []
         max_len = hidden_states.shape[1]
 
-        for i, seq_len in enumerate(pooling_metadata.prompt_lens):
-            unpadded.append(hidden_states[i, max_len - seq_len:, :])
+        if model_input.pooling_metadata is not None:
+            for i, seq_len in enumerate(
+                    model_input.pooling_metadata.prompt_lens):
+                unpadded.append(hidden_states[i, max_len - seq_len:, :])
 
         hidden_states = torch.concat(unpadded)
 
-        pooler_output = self.pooler(hidden_states=hidden_states,
-                                    pooling_metadata=pooling_metadata)
+        pooler_output = self.pooler(
+            hidden_states=hidden_states,
+            pooling_metadata=model_input.pooling_metadata)
 
         t1 = time.time() - t0
         print("[spyre_model_runner:execute_model] t_token: %.2fms" %
               (t1 * 1000))
 
-        return pooler_output
+        return [pooler_output]
 
     def _raw_model_forward(
         self,

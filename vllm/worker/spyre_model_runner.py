@@ -1,6 +1,7 @@
-from dataclasses import dataclass
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union, Iterable, TypeVar, Type
+from dataclasses import dataclass
+from typing import (TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple,
+                    Type, TypeVar)
 
 import torch
 from torch import nn
@@ -13,7 +14,14 @@ from vllm.model_executor.layers.sampler import SamplerOutput
 from vllm.model_executor.model_loader.spyre import get_spyre_model
 from vllm.sequence import IntermediateTensors, SequenceGroupMetadata
 from vllm.utils import is_pin_memory_available
-from vllm.worker.model_runner_base import ModelRunnerBase, ModelRunnerInputBase, _add_sampling_metadata_broadcastable_dict, _init_sampling_metadata_from_tensor_dict
+from vllm.worker.model_runner_base import (
+    ModelRunnerBase, ModelRunnerInputBase,
+    _add_sampling_metadata_broadcastable_dict,
+    _init_sampling_metadata_from_tensor_dict)
+
+if TYPE_CHECKING:
+    from vllm.attention.backends.abstract import AttentionBackend
+    from vllm.model_executor.pooling_metadata import PoolingMetadata
 
 logger = init_logger(__name__)
 
@@ -29,7 +37,8 @@ class ModelInputForSpyre(ModelRunnerInputBase):
     input_tokens: Optional[torch.Tensor] = None
     input_positions: Optional[torch.Tensor] = None
     input_masks: Optional[torch.Tensor] = None
-    sampling_metadata: Optional["SamplingMetadata"] = None
+    sampling_metadata: Optional[SamplingMetadata] = None
+    pooling_metadata: Optional["PoolingMetadata"] = None
     is_prompt: Optional[bool] = None
     # unused
     virtual_engine: Optional[int] = None
@@ -289,6 +298,7 @@ class SpyreModelRunner(ModelRunnerBase):
         kv_caches: Optional[List[torch.Tensor]] = None,
         intermediate_tensors: Optional[IntermediateTensors] = None,
         num_steps: int = 1,
+        **kwargs,
     ) -> Optional[List[SamplerOutput]]:
 
         t0 = time.time()
