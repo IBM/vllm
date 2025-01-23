@@ -1,6 +1,6 @@
 """Verification of seeded random sampling to be deterministic
 
-Run `pytest tests/spyre/test_spyre_seed.py`.
+Run `python -m pytest tests/spyre/test_spyre_seed.py`.
 """
 
 import math

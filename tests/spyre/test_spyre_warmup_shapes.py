@@ -1,6 +1,6 @@
 """Verification of Spyre warmup shapes
 
-Run `pytest tests/spyre/test_spyre_warmup_shapes.py`.
+Run `python -m pytest tests/spyre/test_spyre_warmup_shapes.py`.
 """
 
 from typing import List, Tuple
