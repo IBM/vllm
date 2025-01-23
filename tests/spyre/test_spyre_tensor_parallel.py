@@ -1,6 +1,6 @@
 """Verification of vLLM output by comparing with HF
 
-Run `pytest tests/spyre/test_spyre_tensor_parallel.py`.
+Run `python -m pytest tests/spyre/test_spyre_tensor_parallel.py`.
 """
 
 from typing import List, Tuple

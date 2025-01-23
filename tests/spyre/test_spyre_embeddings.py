@@ -1,6 +1,6 @@
 """Verification of vLLM output by comparing with HF
 
-Run `pytest tests/spyre/test_spyre_embeddings.py`.
+Run `python -m pytest tests/spyre/test_spyre_embeddings.py`.
 """
 
 from typing import List, Tuple
