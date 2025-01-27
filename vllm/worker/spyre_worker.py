@@ -59,7 +59,7 @@ class SpyreWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
                                                  self.is_driver_worker)
         self._env_initialized = False
 
-    def init_distributed_environment(self) -> None:
+    def init_distributed_spyre_environment(self) -> None:
         """Initialize the distributed environment."""
 
         torch._C._distributed_c10d._register_process_group(
@@ -91,7 +91,7 @@ class SpyreWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
             )
 
             if self.parallel_config.world_size > 1:
-                self.init_distributed_environment()
+                self.init_distributed_spyre_environment()
             elif envs.VLLM_SPYRE_DYNAMO_BACKEND in [
                     "sendnn", "sendnn_decoder"
             ]:
