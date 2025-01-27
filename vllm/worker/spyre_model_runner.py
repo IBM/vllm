@@ -100,8 +100,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         self.model: nn.Module
 
     def load_model(self, prompt_lens: Iterable[int],
-                   num_decode_tokens: Iterable[int],
-                   batch_sizes: Iterable[int]) -> None:
+                   num_decode_tokens: Iterable[int]) -> None:
         max_pad_length = max(prompt_lens)
         max_decode_length = max(num_decode_tokens)
         self.model = get_spyre_model(self.model_config,
