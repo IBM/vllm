@@ -48,8 +48,7 @@ class SpyreEmbeddingModelRunner(SpyreModelRunner):
             softmax=False)
 
     def load_model(self, prompt_lens: Iterable[int],
-                   num_decode_tokens: Iterable[int],
-                   batch_sizes: Iterable[int]) -> None:
+                   num_decode_tokens: Iterable[int]) -> None:
         self.model = AutoModel.from_pretrained(self.model_config.model)
         self.model.eval()
         torch.set_grad_enabled(False)
