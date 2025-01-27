@@ -126,13 +126,12 @@ class SpyreWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
         # printing env variables for debugging purposes
         load_model_start_t = time.time()
 
-        wup_prompt_lens, wup_new_tokens, wup_batch_sizes = zip(
-            *[(s["prompt_length"], s["new_tokens"], s["batch_size"])
+        wup_prompt_lens, wup_new_tokens = zip(
+            *[(s["prompt_length"], s["new_tokens"])
               for s in self.scheduler_config.spyre_warmup_shapes])
 
         self.model_runner.load_model(prompt_lens=wup_prompt_lens,
-                                     num_decode_tokens=wup_new_tokens,
-                                     batch_sizes=wup_batch_sizes)
+                                     num_decode_tokens=wup_new_tokens)
 
         load_model_end_t = time.time()
         load_model_total_t = load_model_end_t - load_model_start_t
