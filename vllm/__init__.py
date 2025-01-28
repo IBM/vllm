@@ -34,6 +34,7 @@ def configure_as_vllm_process():
     # see https://github.com/vllm-project/vllm/issues/10480
     os.environ['TORCHINDUCTOR_COMPILE_THREADS'] = '1'
     # see https://github.com/vllm-project/vllm/issues/10619
+    import torch._inductor.config
     torch._inductor.config.compile_threads = 1
 
     from vllm.platforms import current_platform

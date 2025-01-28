@@ -1,5 +1,7 @@
 import time
-from typing import Dict, Iterable, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import (TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple,
+                    Type, TypeVar)
 
 import torch
 from torch import nn
@@ -10,16 +12,59 @@ from vllm.logger import init_logger
 from vllm.model_executor import SamplingMetadata
 from vllm.model_executor.layers.sampler import SamplerOutput
 from vllm.model_executor.model_loader.spyre import get_spyre_model
-from vllm.sequence import SequenceGroupMetadata
+from vllm.sequence import IntermediateTensors, SequenceGroupMetadata
 from vllm.utils import is_pin_memory_available
+from vllm.worker.model_runner_base import (
+    ModelRunnerBase, ModelRunnerInputBase,
+    _add_sampling_metadata_broadcastable_dict,
+    _init_sampling_metadata_from_tensor_dict)
+
+if TYPE_CHECKING:
+    from vllm.attention.backends.abstract import AttentionBackend
+    from vllm.model_executor.pooling_metadata import PoolingMetadata
 
 logger = init_logger(__name__)
 
+TModelInputForSpyre = TypeVar('TModelInputForSpyre',
+                              bound="ModelInputForSpyre")
 
-class SpyreModelRunner:
 
-    # Map of request_id -> generator used for seeded random sampling
-    generators: Dict[str, torch.Generator] = {}
+@dataclass(frozen=True)
+class ModelInputForSpyre(ModelRunnerInputBase):
+    """
+    Used by the SpyreModelRunner.
+    """
+    input_tokens: Optional[torch.Tensor] = None
+    input_positions: Optional[torch.Tensor] = None
+    input_masks: Optional[torch.Tensor] = None
+    sampling_metadata: Optional[SamplingMetadata] = None
+    pooling_metadata: Optional["PoolingMetadata"] = None
+    is_prompt: Optional[bool] = None
+    # unused
+    virtual_engine: Optional[int] = None
+
+    def as_broadcastable_tensor_dict(self) -> Dict[str, Any]:
+        tensor_dict = {
+            "input_tokens": self.input_tokens,
+            "input_positions": self.input_positions,
+            "input_masks": self.input_masks,
+            "is_prompt": self.is_prompt,
+        }
+        _add_sampling_metadata_broadcastable_dict(tensor_dict,
+                                                  self.sampling_metadata)
+        return tensor_dict
+
+    @classmethod
+    def from_broadcasted_tensor_dict(
+        cls: Type[TModelInputForSpyre],
+        tensor_dict: Dict[str, Any],
+        attn_backend: Optional["AttentionBackend"] = None,
+    ) -> TModelInputForSpyre:
+        tensor_dict = _init_sampling_metadata_from_tensor_dict(tensor_dict)
+        return cls(**tensor_dict)
+
+
+class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
     def __init__(
         self,
@@ -27,11 +72,13 @@ class SpyreModelRunner:
         parallel_config: ParallelConfig,
         scheduler_config: SchedulerConfig,
         device_config: DeviceConfig,
+        is_driver_worker: bool,
     ):
         self.model_config = model_config
         self.parallel_config = parallel_config
         self.scheduler_config = scheduler_config
         self.device_config = device_config
+        self.is_driver_worker = is_driver_worker
 
         self.pad_token_id = 0
         if model_config is not None:
@@ -53,8 +100,7 @@ class SpyreModelRunner:
         self.model: nn.Module
 
     def load_model(self, prompt_lens: Iterable[int],
-                   num_decode_tokens: Iterable[int],
-                   batch_sizes: Iterable[int]) -> None:
+                   num_decode_tokens: Iterable[int]) -> None:
         max_pad_length = max(prompt_lens)
         max_decode_length = max(num_decode_tokens)
         self.model = get_spyre_model(self.model_config,
@@ -202,11 +248,17 @@ class SpyreModelRunner:
 
         self._mask = torch.stack(masks_new, dim=0)
 
-    def prepare_input_tensors(
+    def make_model_input_from_broadcasted_tensor_dict(
+            self, tensor_dict: Dict[str, Any]) -> ModelInputForSpyre:
+        return ModelInputForSpyre.from_broadcasted_tensor_dict(tensor_dict)
+
+    def prepare_model_input(
         self,
         seq_group_metadata_list: List[SequenceGroupMetadata],
-        finished_requests_ids: Optional[List[str]] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, SamplingMetadata]:
+        virtual_engine: int = 0,
+        finished_requests_ids: Optional[List[str]] = None
+    ) -> ModelInputForSpyre:
+
         # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes.
         is_prompt = seq_group_metadata_list[0].is_prompt
@@ -222,11 +274,6 @@ class SpyreModelRunner:
              input_masks) = self._prepare_decode(seq_group_metadata_list)
             seq_lens = []
 
-        # Clean up generators from completed requests
-        if finished_requests_ids:
-            for request_id in finished_requests_ids:
-                self.generators.pop(request_id, None)
-
         sampling_metadata = SamplingMetadata.prepare(
             seq_group_metadata_list,
             seq_lens,
@@ -236,38 +283,54 @@ class SpyreModelRunner:
             seq_lens,
             self.device,
             self.pin_memory,
-            self.generators)
-        return (input_tokens, input_positions, input_masks, sampling_metadata)
+            self.get_generators(finished_requests_ids))
+
+        return ModelInputForSpyre(input_tokens=input_tokens,
+                                  input_positions=input_positions,
+                                  input_masks=input_masks,
+                                  sampling_metadata=sampling_metadata,
+                                  is_prompt=is_prompt)
 
     def execute_model(
         self,
-        seq_group_metadata_list: List[SequenceGroupMetadata],
-        finished_requests_ids: Optional[List[str]] = None,
-    ) -> Optional[SamplerOutput]:
-        (input_tokens, input_positions, input_masks,
-         sampling_metadata) = self.prepare_input_tensors(
-             seq_group_metadata_list, finished_requests_ids)
+        model_input: ModelInputForSpyre,
+        kv_caches: Optional[List[torch.Tensor]] = None,
+        intermediate_tensors: Optional[IntermediateTensors] = None,
+        num_steps: int = 1,
+        **kwargs,
+    ) -> Optional[List[SamplerOutput]]:
+
         t0 = time.time()
+
+        if num_steps > 1:
+            raise ValueError(
+                "SpyreModelRunner does not support multi-step execution.")
+
         hidden_states = self.model(
-            input_ids=input_tokens,
-            positions=input_positions,
-            masks=input_masks,
-            seq_group_metadata_list=seq_group_metadata_list,
+            input_ids=model_input.input_tokens,
+            positions=model_input.input_positions,
+            masks=model_input.input_masks,
+            is_prompt=model_input.is_prompt,
         )
 
+        # Only perform sampling in the driver worker.
+        if not self.is_driver_worker:
+            return []
+
         # Compute the logits.
-        logits = self.model.compute_logits(hidden_states, sampling_metadata)
+        logits = self.model.compute_logits(hidden_states,
+                                           model_input.sampling_metadata)
 
         # Sample the next token.
         output = self.model.sample(
             logits=logits,
-            sampling_metadata=sampling_metadata,
+            sampling_metadata=model_input.sampling_metadata,
         )
         t1 = time.time() - t0
         print("[spyre_model_runner:execute_model] t_token: %.2fms" %
               (t1 * 1000))
 
-        return output
+        return [output]
 
     def _prepare_pad_input_ids(
         self,
