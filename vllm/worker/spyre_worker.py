@@ -9,46 +9,38 @@ import torch
 import torch.distributed as dist
 
 import vllm.envs as envs
-from vllm.config import (CacheConfig, DeviceConfig, ModelConfig,
-                         ParallelConfig, SchedulerConfig)
+from vllm.config import VllmConfig
 from vllm.distributed import (ensure_model_parallel_initialized,
                               init_distributed_environment)
 from vllm.model_executor import set_random_seed
-from vllm.model_executor.layers.sampler import SamplerOutput
 from vllm.model_executor.model_loader import spyre_setup
 from vllm.sequence import ExecuteModelRequest
 from vllm.worker.spyre_embedding_model_runner import SpyreEmbeddingModelRunner
 from vllm.worker.spyre_model_runner import SpyreModelRunner
-from vllm.worker.worker_base import LoraNotSupportedWorkerBase
+from vllm.worker.worker_base import (LocalOrDistributedWorkerBase,
+                                     LoraNotSupportedWorkerBase, WorkerBase,
+                                     WorkerInput)
 
 
-class SpyreWorker(LoraNotSupportedWorkerBase):
+class SpyreWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
     """A worker class that executes the model on a group of Spyre cores.
     """
 
     def __init__(
         self,
-        model_config: ModelConfig,
-        parallel_config: ParallelConfig,
-        scheduler_config: SchedulerConfig,
-        device_config: DeviceConfig,
-        cache_config: CacheConfig,
+        vllm_config: VllmConfig,
         local_rank: int,
         rank: int,
         distributed_init_method: str,
         is_driver_worker: bool = False,
     ) -> None:
-        self.model_config = model_config
-        self.parallel_config = parallel_config
-        self.scheduler_config = scheduler_config
-        self.device_config = device_config
-        self.cache_config = cache_config
+        WorkerBase.__init__(self, vllm_config=vllm_config)
         self.local_rank = local_rank
         self.rank = rank
         self.distributed_init_method = distributed_init_method
         self.is_driver_worker = is_driver_worker
-        if parallel_config and is_driver_worker:
-            assert rank % parallel_config.tensor_parallel_size == 0, \
+        if self.parallel_config and is_driver_worker:
+            assert rank % self.parallel_config.tensor_parallel_size == 0, \
                    "Driver worker should be rank 0 of tensor parallel group."
         if self.model_config.trust_remote_code:
             # note: lazy import to avoid importing torch before initializing
@@ -57,22 +49,18 @@ class SpyreWorker(LoraNotSupportedWorkerBase):
 
         if self.model_config.task == "embed":
             self.model_runner: SpyreModelRunner = SpyreEmbeddingModelRunner(
-                model_config, parallel_config, scheduler_config, device_config)
+                self.model_config, self.parallel_config, self.scheduler_config,
+                self.device_config, self.is_driver_worker)
         else:
-            self.model_runner = SpyreModelRunner(model_config, parallel_config,
-                                                 scheduler_config,
-                                                 device_config)
+            self.model_runner = SpyreModelRunner(self.model_config,
+                                                 self.parallel_config,
+                                                 self.scheduler_config,
+                                                 self.device_config,
+                                                 self.is_driver_worker)
         self._env_initialized = False
 
     def init_distributed_environment(self) -> None:
         """Initialize the distributed environment."""
-
-        init_distributed_environment(
-            world_size=self.parallel_config.world_size,
-            rank=self.rank,
-            distributed_init_method="env://",
-            backend="gloo",
-        )
 
         torch._C._distributed_c10d._register_process_group(
             "default", dist.group.WORLD)
@@ -86,11 +74,6 @@ class SpyreWorker(LoraNotSupportedWorkerBase):
         # A small all_reduce for warmup.
         torch.distributed.all_reduce(torch.zeros(1).cpu())
 
-        ensure_model_parallel_initialized(
-            self.parallel_config.tensor_parallel_size,
-            self.parallel_config.pipeline_parallel_size,
-        )
-
     def init_device(self) -> None:
 
         if platform.machine() == "s390x":
@@ -99,12 +82,25 @@ class SpyreWorker(LoraNotSupportedWorkerBase):
                 LoadEndianness.LITTLE)
 
         if not self._env_initialized:
+
+            init_distributed_environment(
+                world_size=self.parallel_config.world_size,
+                rank=self.rank,
+                distributed_init_method="env://",
+                backend="gloo",
+            )
+
             if self.parallel_config.world_size > 1:
                 self.init_distributed_environment()
             elif envs.VLLM_SPYRE_DYNAMO_BACKEND in [
                     "sendnn", "sendnn_decoder"
             ]:
                 spyre_setup.spyre_setup(rank=0, world_size=1, verbose=True)
+
+            ensure_model_parallel_initialized(
+                self.parallel_config.tensor_parallel_size,
+                self.parallel_config.pipeline_parallel_size,
+            )
 
             self._env_initialized = True
 
@@ -130,13 +126,12 @@ class SpyreWorker(LoraNotSupportedWorkerBase):
         # printing env variables for debugging purposes
         load_model_start_t = time.time()
 
-        wup_prompt_lens, wup_new_tokens, wup_batch_sizes = zip(
-            *[(s["prompt_length"], s["new_tokens"], s["batch_size"])
+        wup_prompt_lens, wup_new_tokens = zip(
+            *[(s["prompt_length"], s["new_tokens"])
               for s in self.scheduler_config.spyre_warmup_shapes])
 
         self.model_runner.load_model(prompt_lens=wup_prompt_lens,
-                                     num_decode_tokens=wup_new_tokens,
-                                     batch_sizes=wup_batch_sizes)
+                                     num_decode_tokens=wup_new_tokens)
 
         load_model_end_t = time.time()
         load_model_total_t = load_model_end_t - load_model_start_t
@@ -306,34 +301,25 @@ class SpyreWorker(LoraNotSupportedWorkerBase):
         self.cache_config.num_gpu_blocks = num_gpu_blocks
         self.cache_config.num_cpu_blocks = num_cpu_blocks
 
-    # TODO: why not inference mode?
-    #@torch.inference_mode()
-    def execute_model(
-        self,
-        execute_model_req: Optional[ExecuteModelRequest] = None
-    ) -> Optional[List[SamplerOutput]]:
-
-        torch.set_grad_enabled(False)
-        if execute_model_req is None:
-            return None
-        finished_requests_ids = execute_model_req.finished_requests_ids
-        seq_group_metadata_list = execute_model_req.seq_group_metadata_list
-        num_seq_groups = len(seq_group_metadata_list)
-
-        # If there is no input, we don't need to execute the model.
-        if num_seq_groups == 0:
-            return []
-
-        output = self.model_runner.execute_model(seq_group_metadata_list,
-                                                 finished_requests_ids)
-
-        # Spyre worker only supports single-step output. Wrap the output in a
-        # list to conform to interface.
-        return [output]
-
     def get_cache_block_size_bytes(self) -> int:
         """Determine the size in bytes of a cache block.
 
         This is required for speculative decoding; it is not yet implemented.
         """
         raise NotImplementedError
+
+    @property
+    def do_metadata_broadcast(self) -> bool:
+        return True
+
+    @property
+    def kv_cache(self) -> Optional[List[List[torch.Tensor]]]:
+        return None
+
+    def prepare_worker_input(
+            self, execute_model_req: ExecuteModelRequest) -> WorkerInput:
+        return WorkerInput(num_seq_groups=len(
+            execute_model_req.seq_group_metadata_list), )
+
+    def execute_worker(self, worker_input: WorkerInput) -> None:
+        pass

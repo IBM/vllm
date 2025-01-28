@@ -1,6 +1,6 @@
 """Utilities for selecting and loading Spyre models."""
 import sys
-from typing import List, Optional
+from typing import Optional
 
 import torch
 import torch._inductor.config
@@ -15,7 +15,6 @@ from vllm.logger import init_logger
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.model_executor.layers.sampler import Sampler, SamplerOutput
 from vllm.model_executor.sampling_metadata import SamplingMetadata
-from vllm.sequence import SequenceGroupMetadata
 
 try:
     from torch_sendnn import torch_sendnn  # noqa: F401
@@ -59,10 +58,9 @@ class SpyreCausalLM(nn.Module):
         input_ids: torch.Tensor,
         positions: torch.Tensor,
         masks: torch.Tensor,
-        seq_group_metadata_list: List[SequenceGroupMetadata],
+        is_prompt: bool,
     ) -> torch.Tensor:
 
-        is_prompt = seq_group_metadata_list[0].is_prompt
         if is_prompt:
             self.past_key_value_states = None
 
