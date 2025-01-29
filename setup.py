@@ -383,10 +383,6 @@ def _is_cpu() -> bool:
     return VLLM_TARGET_DEVICE == "cpu"
 
 
-def _is_spyre() -> bool:
-    return VLLM_TARGET_DEVICE == "spyre"
-
-
 def _is_openvino() -> bool:
     return VLLM_TARGET_DEVICE == "openvino"
 
@@ -511,8 +507,6 @@ def get_vllm_version() -> str:
         if neuron_version != MAIN_CUDA_VERSION:
             neuron_version_str = neuron_version.replace(".", "")[:3]
             version += f"{sep}neuron{neuron_version_str}"
-    # elif _is_spyre():
-    #     version += f"{sep}spyre"
     elif _is_hpu():
         # Get the Intel Gaudi Software Suite version
         gaudi_sw_version = str(get_gaudi_sw_version())

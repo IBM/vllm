@@ -129,17 +129,6 @@ def openvino_platform_plugin() -> Optional[str]:
     return "vllm.platforms.openvino.OpenVinoPlatform" if is_openvino else None
 
 
-def spyre_platform_plugin() -> Optional[str]:
-    is_spyre = False
-    try:
-        from importlib.metadata import version
-        is_spyre = "spyre" in version("vllm")
-    except Exception:
-        pass
-
-    return "vllm.platforms.spyre.SpyrePlatform" if is_spyre else None
-
-
 builtin_platform_plugins = {
     'tpu': tpu_platform_plugin,
     'cuda': cuda_platform_plugin,
@@ -149,7 +138,6 @@ builtin_platform_plugins = {
     'cpu': cpu_platform_plugin,
     'neuron': neuron_platform_plugin,
     'openvino': openvino_platform_plugin,
-    # 'spyre': spyre_platform_plugin,
 }
 
 

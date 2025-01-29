@@ -37,7 +37,6 @@ DEVICE_OPTIONS = [
     "openvino",
     "tpu",
     "xpu",
-    "spyre",
     "hpu",
 ]
 
