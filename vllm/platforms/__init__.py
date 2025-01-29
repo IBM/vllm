@@ -149,7 +149,7 @@ builtin_platform_plugins = {
     'cpu': cpu_platform_plugin,
     'neuron': neuron_platform_plugin,
     'openvino': openvino_platform_plugin,
-    'spyre': spyre_platform_plugin,
+    # 'spyre': spyre_platform_plugin,
 }
 
 
