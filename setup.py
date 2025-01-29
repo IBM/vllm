@@ -573,8 +573,6 @@ def get_requirements() -> List[str]:
         requirements = _read_requirements("requirements-rocm.txt")
     elif _is_neuron():
         requirements = _read_requirements("requirements-neuron.txt")
-    # elif _is_spyre():
-    #     requirements = _read_requirements("requirements-spyre.txt")
     elif _is_hpu():
         requirements = _read_requirements("requirements-hpu.txt")
     elif _is_openvino():
