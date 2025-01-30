@@ -20,8 +20,7 @@ build-backend = "setuptools.build_meta"
 line-length = 80
 exclude = [
     # External file, leaving license intact
-    "examples/other/fp8/quantizer/quantize.py",
-    "vllm/model_executor/model_loader/spyre_setup.py"
+    "examples/other/fp8/quantizer/quantize.py"
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -80,8 +79,7 @@ files = [
 exclude = [
     "vllm/model_executor/parallel_utils/|vllm/model_executor/models/",
     # Ignore triton kernels in ops.
-    'vllm/attention/ops/.*\.py$',
-    'vllm/model_executor/model_loader/spyre_setup.py'
+    'vllm/attention/ops/.*\.py$'
 ]
 
 [tool.codespell]
