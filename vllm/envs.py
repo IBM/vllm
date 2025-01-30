@@ -494,17 +494,6 @@ environment_variables: Dict[str, Callable[[], Any]] = {
         int(b) for b in os.getenv(key='VLLM_SPYRE_WARMUP_BATCH_SIZES',
                                   default='1').split(',')
     ],
-
-    # Defines the backend that torch.compile will use when using Spyre
-    # Available options:
-    # - "sendnn_decoder": Compile for execution on Spyre hardware for
-    #   decoder models
-    # - "sendnn": Compile for execution on Spyre hardware for
-    #   encoder models
-    # - "inductor": Compile for execution on CPU (for debug and testing)
-    # - "eager": Skip compile entirely (for debug and testing
-    "VLLM_SPYRE_DYNAMO_BACKEND":
-    lambda: os.getenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn_decoder"),
 }
 
 # end-env-vars-definition
