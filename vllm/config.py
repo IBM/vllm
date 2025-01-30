@@ -560,7 +560,6 @@ class ModelConfig:
             "awq_marlin", "fbgemm_fp8", "compressed_tensors",
             "compressed-tensors", "experts_int8", "quark"
         ]
-        spyre_supported_quantization = ["gptq"]
 
         if self.quantization is not None:
             self.quantization = self.quantization.lower()
@@ -603,11 +602,6 @@ class ModelConfig:
                     "%s quantization is not fully "
                     "optimized yet. The speed can be slower than "
                     "non-quantized models.", self.quantization)
-            if current_platform.is_spyre(
-            ) and self.quantization not in spyre_supported_quantization:
-                raise ValueError(
-                    f"{self.quantization} quantization is currently not "
-                    f"supported in Spyre Backend.")
 
     def _verify_cuda_graph(self) -> None:
         if self.max_seq_len_to_capture is None:
