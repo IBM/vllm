@@ -46,9 +46,8 @@ class SpyreCausalLM(nn.Module):
         self.past_key_value_states = None
         self.dtype = torch.float16 if envs.VLLM_SPYRE_DYNAMO_BACKEND == \
             'sendnn_decoder' else torch.float32
-        # number of added padding sequences to fill
-        # batch to warmed up batch size
-        self.num_padded_sequences = 0
+        # indices: True unfinished, False for finished or padded sequence
+        self.indices = None
 
         # Lazy initialized
         self.model: nn.Module
@@ -89,10 +88,8 @@ class SpyreCausalLM(nn.Module):
                 for tensor in layer:
                     torch._dynamo.mark_dynamic(tensor, 2)
 
-        # removing batch padding sequences to compute logits
-        batch_size = input_ids.shape[0]
-
-        logits = logits[:batch_size - self.num_padded_sequences]
+        # removing finished or padded sequences
+        logits = logits[self.indices]
 
         return logits
 
