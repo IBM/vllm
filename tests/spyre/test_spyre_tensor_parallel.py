@@ -10,20 +10,36 @@ from spyre_util import (compare_results, generate_hf_output,
                         generate_spyre_vllm_output)
 
 from vllm import SamplingParams
+import os
 
+# get model directory path from env, if not set then default to "/models". 
+model_dir_path = os.environ.get("SPYRE_TEST_MODEL_DIR", "/models")
+# get model backend from env, if not set then default to "eager" 
+# For multiple values, export SPYRE_TEST_MODEL_DIR="eager,inductor"
+backend_type = os.environ.get("SYPRE_TEST_BACKEND_TYPE", "eager")
+# get model names from env, if not set then default to "llama-194m" 
+# For multiple values, export SPYRE_TEST_MODEL_DIR="llama-194m,all-roberta-large-v1"
+user_test_model_list = os.environ.get("SPYRE_TEST_MODEL_LIST","llama-194m")
+test_model_list, test_backend_list = [],[]
 
-@pytest.mark.parametrize("model", ["/models/llama-194m"])
+for model in user_test_model_list.split(','):
+    test_model_list.append(f"{model_dir_path.strip()}/{model.strip()}")
+
+for backend in backend_type.split(','):
+    test_backend_list.append(backend.strip())
+
+@pytest.mark.parametrize("model", test_model_list)
 @pytest.mark.parametrize("prompts", [[
     "Provide a list of instructions for preparing"
     " chicken soup for a family of four.", "Hello",
     "What is the weather today like?", "Who are you?"
 ]])
-@pytest.mark.parametrize("warmup_shapes", [[(64, 20, 4)]]
+@pytest.mark.parametrize("warmup_shapes", [[(64, 20, 1)]]
                          )  #,[(64,20,8)],[(128,20,4)],[(128,20,8)]])
 # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("tp_size", [2])
 @pytest.mark.parametrize("backend",
-                         ["eager"])  #, "inductor", "sendnn_decoder"])
+                         test_backend_list)  #, "inductor", "sendnn_decoder"])
 def test_output(
     model: str,
     prompts: List[str],
