@@ -1,6 +1,6 @@
 import math
 import os
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Union
 
 import numpy as np
 from sentence_transformers import SentenceTransformer, util
@@ -18,7 +18,8 @@ ISCLOSE_REL_TOL_SPYRE = 0.1
 def generate_spyre_vllm_output(model: str, prompts: List[str],
                                warmup_shapes: List[Tuple[int, int, int]],
                                max_model_len: int, block_size: int,
-                               sampling_params: SamplingParams,
+                               sampling_params: Union[SamplingParams,
+                                                      List[SamplingParams]],
                                tensor_parallel_size: int,
                                backend: str) -> List[Dict[str, Any]]:
 
@@ -62,8 +63,12 @@ def generate_spyre_vllm_output(model: str, prompts: List[str],
 
 
 # Hugging Face
-def generate_hf_output(model: str, prompts: List[str],
-                       max_new_tokens: int) -> List[Dict[str, Any]]:
+def generate_hf_output(
+        model: str, prompts: List[str],
+        max_new_tokens: Union[int, List[int]]) -> List[Dict[str, Any]]:
+
+    if not isinstance(max_new_tokens, list):
+        max_new_tokens = [max_new_tokens] * len(prompts)
 
     hf_model = AutoModelForCausalLM.from_pretrained(model)
     hf_tokenizer = AutoTokenizer.from_pretrained(model)
@@ -71,11 +76,12 @@ def generate_hf_output(model: str, prompts: List[str],
     results = []
     for prompt_index, prompt in enumerate(prompts):
         hf_input_tokens = hf_tokenizer(prompt, return_tensors="pt").input_ids
-        hf_output = hf_model.generate(hf_input_tokens,
-                                      do_sample=False,
-                                      max_new_tokens=max_new_tokens,
-                                      return_dict_in_generate=True,
-                                      output_scores=True)
+        hf_output = hf_model.generate(
+            hf_input_tokens,
+            do_sample=False,
+            max_new_tokens=max_new_tokens[prompt_index],
+            return_dict_in_generate=True,
+            output_scores=True)
 
         # decode output tokens after first removing input tokens (prompt)
         hf_generated_text = hf_tokenizer.batch_decode(
