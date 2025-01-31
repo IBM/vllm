@@ -1487,7 +1487,8 @@ class SchedulerConfig:
 
         self.chunked_prefill_enabled = self.enable_chunked_prefill
         from vllm.platforms import current_platform
-        self.spyre_scheduling_enabled = current_platform.get_device_name() == "spyre"
+        self.spyre_scheduling_enabled = current_platform.get_device_name(
+        ) == "spyre"
         if self.spyre_scheduling_enabled:
             # load warmup shapes and sort by "speed"
             wup_prompt_lens = envs.VLLM_SPYRE_WARMUP_PROMPT_LENS or []
