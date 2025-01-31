@@ -46,7 +46,9 @@ class SpyreCausalLM(nn.Module):
         self.past_key_value_states = None
         self.dtype = torch.float16 if envs.VLLM_SPYRE_DYNAMO_BACKEND == \
             'sendnn_decoder' else torch.float32
-        # indices: True unfinished, False for finished or padded sequence
+        # boolean tensor of length batch size with indices:
+        # True for unfinished sequences and
+        # False for finished or padded sequences
         self.indices = None
 
         # Lazy initialized
