@@ -66,18 +66,18 @@ def test_output(
         ignore_eos=False)
 
     vllm_sampling_params = [vllm_sampling_params_normal] * 3
-    max_new_tokens = [max_new_tokens_warmup] * 3
+    hf_max_new_tokens = [max_new_tokens_warmup] * 3
 
     # stop last or first sequence in batch early
     if stop_last:
         vllm_sampling_params = vllm_sampling_params + [
             vllm_sampling_params_early_stop
         ]
-        max_new_tokens = max_new_tokens + [max_new_tokens_early_stop]
+        hf_max_new_tokens = hf_max_new_tokens + [max_new_tokens_early_stop]
     else:
         vllm_sampling_params = [vllm_sampling_params_early_stop
                                 ] + vllm_sampling_params
-        max_new_tokens = [max_new_tokens_early_stop] + max_new_tokens
+        hf_max_new_tokens = [max_new_tokens_early_stop] + hf_max_new_tokens
 
     vllm_results = generate_spyre_vllm_output(
         model=model,
@@ -91,7 +91,7 @@ def test_output(
 
     hf_results = generate_hf_output(model=model,
                                     prompts=prompts,
-                                    max_new_tokens=max_new_tokens)
+                                    max_new_tokens=hf_max_new_tokens)
 
     compare_results(model=model,
                     prompts=prompts,
