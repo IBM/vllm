@@ -13,7 +13,7 @@ import os
 model_dir_path = os.environ.get("SPYRE_TEST_MODEL_DIR", "/models")
 # get model backend from env, if not set then default to "eager" 
 # For multiple values, export SPYRE_TEST_MODEL_DIR="eager,inductor"
-backend_type = os.environ.get("SYPRE_TEST_BACKEND_TYPE", "eager")
+backend_type = os.environ.get("SPYRE_TEST_BACKEND_TYPE", "eager")
 # get model names from env, if not set then default to "llama-194m" 
 # For multiple values, export SPYRE_TEST_MODEL_DIR="llama-194m,all-roberta-large-v1"
 user_test_model_list = os.environ.get("SPYRE_TEST_EMBEDDING_MODEL_LIST","all-roberta-large-v1")
