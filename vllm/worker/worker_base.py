@@ -523,7 +523,7 @@ class WorkerWrapperBase:
         kwargs = all_kwargs[self.rpc_rank]
         enable_trace_function_call_for_thread(self.vllm_config)
 
-        from vllm import configure_as_vllm_process
+        from vllm.vllm import configure_as_vllm_process
         configure_as_vllm_process()
 
         from vllm.plugins import load_general_plugins
