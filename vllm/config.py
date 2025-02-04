@@ -3,7 +3,6 @@ import copy
 import enum
 import hashlib
 import json
-import operator
 import sys
 import warnings
 from contextlib import contextmanager
@@ -16,6 +15,7 @@ from typing import (TYPE_CHECKING, Any, Callable, ClassVar, Counter, Dict,
 import torch
 from pydantic import BaseModel, Field, PrivateAttr
 from transformers import PretrainedConfig
+from vllm_spyre.config import SchedulerConfig
 
 import vllm.envs as envs
 from vllm.compilation.inductor_pass import CallableInductorPass, InductorPass
@@ -1365,7 +1365,7 @@ class ParallelConfig:
 
 
 @dataclass
-class SchedulerConfig:
+class SchedulerConfig_vllm:
     """Scheduler configuration."""
 
     runner_type: str = "generate"  # The runner type to launch for the model.
@@ -1486,41 +1486,6 @@ class SchedulerConfig:
                 self.max_num_batched_tokens)
 
         self.chunked_prefill_enabled = self.enable_chunked_prefill
-        from vllm.platforms import current_platform
-        self.spyre_scheduling_enabled = current_platform.get_device_name(
-        ) == "spyre"
-        if self.spyre_scheduling_enabled:
-            # load warmup shapes and sort by "speed"
-            wup_prompt_lens = envs.VLLM_SPYRE_WARMUP_PROMPT_LENS or []
-            wup_batch_sizes = envs.VLLM_SPYRE_WARMUP_BATCH_SIZES or []
-            if len(wup_prompt_lens) != len(wup_batch_sizes):
-                raise RuntimeError(
-                    "The lists in VLLM_SPYRE_WARMUP_PROMPT_LENS and "
-                    "VLLM_SPYRE_WARMUP_BATCH_SIZES must have equal length")
-            if self.runner_type == "pooling":
-                wup_new_tokens = [0] * len(wup_prompt_lens)
-            else:
-                wup_new_tokens = envs.VLLM_SPYRE_WARMUP_NEW_TOKENS or []
-                if len(wup_new_tokens) != len(wup_prompt_lens):
-                    raise RuntimeError(
-                        "The lists in VLLM_SPYRE_WARMUP_PROMPT_LENS and "
-                        "VLLM_SPYRE_WARMUP_NEW_TOKENS must have equal length")
-
-            print("[SchedulerConfig] VLLM_SPYRE_WARMUP_PROMPT_LENS =",
-                  wup_prompt_lens)
-            print("[SchedulerConfig] VLLM_SPYRE_WARMUP_NEW_TOKENS =",
-                  wup_new_tokens)
-            print("[SchedulerConfig] VLLM_SPYRE_WARMUP_BATCH_SIZES =",
-                  wup_batch_sizes)
-
-            self.spyre_warmup_shapes = tuple(
-                sorted([{
-                    'prompt_length': pl,
-                    'new_tokens': nt,
-                    'batch_size': bs
-                } for pl, nt, bs in zip(wup_prompt_lens, wup_new_tokens,
-                                        wup_batch_sizes)],
-                       key=operator.itemgetter('batch_size', 'prompt_length')))
         self._verify_args()
 
     def _verify_args(self) -> None:

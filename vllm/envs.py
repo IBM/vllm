@@ -67,9 +67,6 @@ if TYPE_CHECKING:
     VLLM_USE_TRITON_AWQ: bool = False
     VLLM_ALLOW_RUNTIME_LORA_UPDATING: bool = False
     VLLM_SKIP_P2P_CHECK: bool = False
-    VLLM_SPYRE_WARMUP_PROMPT_LENS: Optional[List[int]] = None
-    VLLM_SPYRE_WARMUP_NEW_TOKENS: Optional[List[int]] = None
-    VLLM_SPYRE_WARMUP_BATCH_SIZES: Optional[List[int]] = None
     VLLM_DISABLED_KERNELS: List[str] = []
     VLLM_USE_V1: bool = False
     VLLM_ENABLE_V1_MULTIPROCESSING: bool = True
@@ -470,30 +467,6 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     lambda: float(os.getenv("VLLM_LOG_BATCHSIZE_INTERVAL", "-1")),
     "VLLM_DISABLE_COMPILE_CACHE":
     lambda: bool(int(os.getenv("VLLM_DISABLE_COMPILE_CACHE", "0"))),
-
-    # Defines the prompt lengths the Spyre accelerator should be prepared
-    # for, formatted as comma separated list.
-    "VLLM_SPYRE_WARMUP_PROMPT_LENS":
-    lambda: [
-        int(p) for p in os.getenv(key='VLLM_SPYRE_WARMUP_PROMPT_LENS',
-                                  default='64').split(',')
-    ],
-
-    # Defines the max output tokens the Spyre accelerator should be prepared
-    # for, formatted as comma separated list.
-    "VLLM_SPYRE_WARMUP_NEW_TOKENS":
-    lambda: [
-        int(d) for d in os.getenv(key='VLLM_SPYRE_WARMUP_NEW_TOKENS',
-                                  default='20').split(',')
-    ],
-
-    # Defines the batch sizes the Spyre accelerator should be prepared
-    # for, formatted as comma separated list.
-    "VLLM_SPYRE_WARMUP_BATCH_SIZES":
-    lambda: [
-        int(b) for b in os.getenv(key='VLLM_SPYRE_WARMUP_BATCH_SIZES',
-                                  default='1').split(',')
-    ],
 }
 
 # end-env-vars-definition
