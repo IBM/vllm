@@ -96,6 +96,8 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         self._position_ids: torch.Tensor = None
         # attention masks of all the sequences in current batch
         self._mask: torch.Tensor = None
+        # mapping: request id to index in batch
+        self._req_ids2idx: dict = {}
         # Lazy initialization: after load_model.
         self.model: nn.Module
 
@@ -148,8 +150,10 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             'prompt_length']
         padded_batch_size = applicable_spyre_warmup_shapes[0]['batch_size']
 
-        for seq_group_metadata in seq_group_metadata_list:
+        self._req_ids2idx = {}
+        for idx, seq_group_metadata in enumerate(seq_group_metadata_list):
             assert seq_group_metadata.is_prompt
+            self._req_ids2idx[seq_group_metadata.request_id] = idx
             seq_ids = list(seq_group_metadata.seq_data.keys())
             assert len(seq_ids) == 1
             seq_id = seq_ids[0]
@@ -163,9 +167,13 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                              dtype=torch.long,
                              device=torch.device("cpu")))
 
-        # set number of added padding sequences used for computing logits
-        self.model.num_padded_sequences = padded_batch_size - len(
-            input_token_list)
+        actual_batch_size = len(input_token_list)
+        self.model.indices = torch.cat([
+            torch.ones(actual_batch_size, dtype=torch.bool, device='cpu'),
+            torch.zeros(padded_batch_size - actual_batch_size,
+                        dtype=torch.bool,
+                        device='cpu')
+        ])
 
         # padding to compiled batch size
         while len(input_token_list) < padded_batch_size:
@@ -187,7 +195,9 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         seq_group_metadata_list: List[SequenceGroupMetadata],
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         assert len(seq_group_metadata_list) > 0
-        input_tokens: List[List[int]] = []
+        input_tokens: List[List[int]] = [
+            [0] for _ in range(self._position_ids.shape[0])
+        ]
 
         for seq_group_metadata in seq_group_metadata_list:
             assert not seq_group_metadata.is_prompt
@@ -197,18 +207,9 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
             seq_data = seq_group_metadata.seq_data[seq_id]
             generation_token = seq_data.get_last_token_id()
-            input_tokens.append([generation_token])
-
-        #  padding to compiled batch size
-        actual_batch_size = len(seq_group_metadata_list)
-        padded_batch_size = self._position_ids.shape[0]
-
-        # set number of added padding sequences used for computing logits
-        self.model.num_padded_sequences = padded_batch_size - actual_batch_size
-
-        while actual_batch_size < padded_batch_size:
-            input_tokens.append([0])
-            actual_batch_size += 1
+            input_tokens[self._req_ids2idx[seq_group_metadata.request_id]] = [
+                generation_token
+            ]
 
         # update position ids and attention mask
         self._update_position_ids()
@@ -274,6 +275,10 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                 input_tokens.shape[1] for i in range(input_tokens.shape[0])
             ]
         else:
+            # updating indices: set indices of newly finished sequences False
+            if finished_requests_ids:
+                for seq_id in finished_requests_ids:
+                    self.model.indices[self._req_ids2idx[seq_id]] = False
             (input_tokens, input_positions,
              input_masks) = self._prepare_decode(seq_group_metadata_list)
             seq_lens = []
