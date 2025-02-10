@@ -56,7 +56,7 @@ from vllm.transformers_utils.tokenizer_group import (
     BaseTokenizerGroup, init_tokenizer_from_configs)
 from vllm.usage.usage_lib import (UsageContext, is_usage_stats_enabled,
                                   usage_message)
-from vllm.utils import Counter, Device, deprecate_kwargs, weak_bind
+from vllm.utils import Counter, Device, deprecate_kwargs, weak_bind, resolve_obj_by_qualname
 from vllm.version import __version__ as VLLM_VERSION
 
 logger = init_logger(__name__)
@@ -344,8 +344,15 @@ class LLMEngine:
         # Create the scheduler.
         # NOTE: the cache_config here have been updated with the numbers of
         # GPU and CPU blocks, which are profiled in the distributed executor.
+        
+        # use platform specific Scheduler if specified
+        if self.vllm_config.parallel_config.scheduler_cls != "auto":
+            scheduler_class = resolve_obj_by_qualname(self.vllm_config.parallel_config.scheduler_cls)
+        else: # use default vllm Scheduler
+            scheduler_class = Scheduler
+
         self.scheduler = [
-            Scheduler(
+            scheduler_class(
                 self.scheduler_config, self.cache_config, self.lora_config,
                 self.parallel_config.pipeline_parallel_size,
                 self.async_callbacks[v_id]

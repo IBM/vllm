@@ -1258,6 +1258,7 @@ class ParallelConfig:
     # will be determined based on the platform.
     worker_cls: str = "auto"
     sd_worker_cls: str = "auto"
+    scheduler_cls: str = "auto"
 
     world_size: int = field(init=False)
 
