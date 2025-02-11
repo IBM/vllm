@@ -345,10 +345,6 @@ class LLMEngine:
         # NOTE: the cache_config here have been updated with the numbers of
         # GPU and CPU blocks, which are profiled in the distributed executor.
 
-        # use generic Scheduler if no platform specific Scheduler specified
-        if self.vllm_config.parallel_config.scheduler_cls == "auto":
-            self.vllm_config.parallel_config.scheduler_cls = \
-            "vllm.core.scheduler.Scheduler"
         Scheduler = resolve_obj_by_qualname(
             self.vllm_config.parallel_config.scheduler_cls)
         self.scheduler = [
