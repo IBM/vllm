@@ -17,8 +17,7 @@ import vllm.envs as envs
 from vllm.config import (DecodingConfig, LoRAConfig, ModelConfig,
                          ObservabilityConfig, ParallelConfig, SchedulerConfig,
                          VllmConfig)
-from vllm.core.scheduler import (ScheduledSequenceGroup, Scheduler,
-                                 SchedulerOutputs)
+from vllm.core.scheduler import ScheduledSequenceGroup, SchedulerOutputs
 from vllm.engine.arg_utils import EngineArgs
 from vllm.engine.metrics_types import StatLoggerBase, Stats
 from vllm.engine.output_processor.interfaces import (
@@ -56,7 +55,8 @@ from vllm.transformers_utils.tokenizer_group import (
     BaseTokenizerGroup, init_tokenizer_from_configs)
 from vllm.usage.usage_lib import (UsageContext, is_usage_stats_enabled,
                                   usage_message)
-from vllm.utils import Counter, Device, deprecate_kwargs, weak_bind, resolve_obj_by_qualname
+from vllm.utils import (Counter, Device, deprecate_kwargs,
+                        resolve_obj_by_qualname, weak_bind)
 from vllm.version import __version__ as VLLM_VERSION
 
 logger = init_logger(__name__)
@@ -344,15 +344,15 @@ class LLMEngine:
         # Create the scheduler.
         # NOTE: the cache_config here have been updated with the numbers of
         # GPU and CPU blocks, which are profiled in the distributed executor.
-        
-        # use platform specific Scheduler if specified
-        if self.vllm_config.parallel_config.scheduler_cls != "auto":
-            scheduler_class = resolve_obj_by_qualname(self.vllm_config.parallel_config.scheduler_cls)
-        else: # use default vllm Scheduler
-            scheduler_class = Scheduler
 
+        # use generic Scheduler if no platform specific Scheduler specified
+        if self.vllm_config.parallel_config.scheduler_cls == "auto":
+            self.vllm_config.parallel_config.scheduler_cls = \
+            "vllm.core.scheduler.Scheduler"
+        Scheduler = resolve_obj_by_qualname(
+            self.vllm_config.parallel_config.scheduler_cls)
         self.scheduler = [
-            scheduler_class(
+            Scheduler(
                 self.scheduler_config, self.cache_config, self.lora_config,
                 self.parallel_config.pipeline_parallel_size,
                 self.async_callbacks[v_id]
