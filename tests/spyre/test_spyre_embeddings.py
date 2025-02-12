@@ -12,17 +12,17 @@ import os
 # get model directory path from env, if not set then default to "/models". 
 model_dir_path = os.environ.get("SPYRE_TEST_MODEL_DIR", "/models")
 # get model backend from env, if not set then default to "eager" 
-# For multiple values, export SPYRE_TEST_MODEL_DIR="eager,inductor"
-backend_type = os.environ.get("SPYRE_TEST_BACKEND_TYPE", "eager")
-# get model names from env, if not set then default to "llama-194m" 
-# For multiple values, export SPYRE_TEST_MODEL_DIR="llama-194m,all-roberta-large-v1"
+# For multiple values, export SPYRE_TEST_BACKEND_LIST="eager,inductor,sendnn_decoder"
+backend_list = os.environ.get("SPYRE_TEST_BACKEND_LIST", "eager")
+# get model names from env, if not set then default to "all-roberta-large-v1" 
+# For multiple values, export SPYRE_TEST_MODEL_LIST="llama-194m,all-roberta-large-v1"
 user_test_model_list = os.environ.get("SPYRE_TEST_EMBEDDING_MODEL_LIST","all-roberta-large-v1")
 test_model_list, test_backend_list = [],[]
 
 for model in user_test_model_list.split(','):
     test_model_list.append(f"{model_dir_path}/{model.strip()}")
 
-for backend in backend_type.split(','):
+for backend in backend_list.split(','):
     test_backend_list.append(backend.strip())
 
 @pytest.mark.parametrize("model", test_model_list)
@@ -36,7 +36,7 @@ for backend in backend_type.split(','):
                          [(64, 4), (64, 8), (128, 4),
                           (128, 8)])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend",
-                         test_backend_list)  #, "inductor", "sendnn_decoder"])
+                         test_backend_list)
 def test_output(
     model: str,
     prompts: List[str],
