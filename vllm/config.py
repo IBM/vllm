@@ -1486,7 +1486,6 @@ class SchedulerConfig:
                 self.max_num_batched_tokens)
 
         self.chunked_prefill_enabled = self.enable_chunked_prefill
-        self.spyre_warmup_shapes = None
         self._verify_args()
 
     def _verify_args(self) -> None:
