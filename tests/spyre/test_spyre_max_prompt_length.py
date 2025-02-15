@@ -7,29 +7,15 @@ from typing import List, Tuple
 
 import pytest
 from spyre_util import (compare_results, generate_hf_output,
-                        generate_spyre_vllm_output)
+                        generate_spyre_vllm_output, get_spyre_backend_list,
+                        get_spyre_model_list)
+
 from transformers import AutoTokenizer
 
 from vllm import SamplingParams
-import os
 
-# get model directory path from env, if not set then default to "/models". 
-model_dir_path = os.environ.get("SPYRE_TEST_MODEL_DIR", "/models")
-# get model backend from env, if not set then default to "eager" 
-# For multiple values, export SPYRE_TEST_BACKEND_LIST="eager,inductor,sendnn_decoder"
-backend_list = os.environ.get("SPYRE_TEST_BACKEND_LIST", "eager")
-# get model names from env, if not set then default to "llama-194m" 
-# For multiple values, export SPYRE_TEST_MODEL_LIST="llama-194m,all-roberta-large-v1"
-user_test_model_list = os.environ.get("SPYRE_TEST_MODEL_LIST","llama-194m")
-test_model_list, test_backend_list = [],[]
 
-for model in user_test_model_list.split(','):
-    test_model_list.append(f"{model_dir_path}/{model.strip()}")
-
-for backend in backend_list.split(','):
-    test_backend_list.append(backend.strip())
-
-@pytest.mark.parametrize("model", test_model_list)
+@pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("prompts", [
     7 * [
         "Hello",
@@ -38,14 +24,14 @@ for backend in backend_list.split(','):
         " to the user. Provide a list of instructions for preparing chicken "
         "soup for a family of four. Indicate if the weather forecast looks "
         "good for today. Explain in a brief summary comprised of at most 50"
-        " words what you are."
+        " words what you are.",
     ]
-])
+    ],
+)
 @pytest.mark.parametrize("warmup_shapes",
                          [[(64, 20, 4)], [(64, 20, 4), (128, 20, 4)]]
-                        )  # (prompt_length/new_tokens/batch_size)
-@pytest.mark.parametrize("backend",
-                         test_backend_list)
+                         )  # (prompt_length/new_tokens/batch_size)
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_output(
     model: str,
     prompts: List[str],
@@ -78,7 +64,8 @@ def test_output(
         max_tokens=max_new_tokens,
         temperature=0,
         logprobs=0,  # return logprobs of generated tokens only
-        ignore_eos=True)
+        ignore_eos=True,
+    )
 
     vllm_results = generate_spyre_vllm_output(
         model=model,
@@ -88,7 +75,8 @@ def test_output(
         block_size=2048,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
-        backend=backend)
+        backend=backend,
+    )
 
     hf_results = generate_hf_output(model=model,
                                     prompts=prompts,
@@ -102,16 +90,18 @@ def test_output(
         hf_input_tokens = hf_tokenizer(prompt, return_tensors="pt").input_ids
         if len(hf_input_tokens[0]) > max_prompt_length:
             hf_results[prompt_index] = {
-                'text': '',
-                'token_ids': (),
-                'tokens': (),
-                'logprobs': ()
+                "text": "",
+                "token_ids": (),
+                "tokens": (),
+                "logprobs": (),
             }
 
-    compare_results(model=model,
-                    prompts=prompts,
-                    warmup_shapes=warmup_shapes,
-                    tensor_parallel_size=1,
-                    backend=backend,
-                    vllm_results=vllm_results,
-                    hf_results=hf_results)
+    compare_results(
+        model=model,
+        prompts=prompts,
+        warmup_shapes=warmup_shapes,
+        tensor_parallel_size=1,
+        backend=backend,
+        vllm_results=vllm_results,
+        hf_results=hf_results,
+    )
