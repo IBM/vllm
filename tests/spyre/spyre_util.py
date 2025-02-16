@@ -292,7 +292,7 @@ def get_spyre_model_dir_path():
 # get model backend from env, if not set then default to "eager"
 # For multiple values:
 # export SPYRE_TEST_BACKEND_LIST="eager, inductor, sendnn_decoder"
-def get_spyre_backend_list(isEmbeddings=False):
+def get_spyre_backend_list():
     test_backend_list = []
     user_backend_list = os.environ.get("SPYRE_TEST_BACKEND_LIST", "eager")
 

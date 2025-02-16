@@ -26,7 +26,7 @@ from spyre_util import (compare_embedding_results, spyre_vllm_embeddings,
 @pytest.mark.parametrize("warmup_shape",
                          [(64, 4), (64, 8), (128, 4),
                           (128, 8)])  # (prompt_length/new_tokens/batch_size)
-@pytest.mark.parametrize("backend", get_spyre_backend_list(isEmbeddings=True))
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_output(
     model: str,
     prompts: List[str],
