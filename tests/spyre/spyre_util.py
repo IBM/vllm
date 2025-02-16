@@ -296,9 +296,6 @@ def get_spyre_backend_list(isEmbeddings=False):
     test_backend_list = []
     user_backend_list = os.environ.get("SPYRE_TEST_BACKEND_LIST", "eager")
 
-    # set default to sendnn if testing embeddings
-    if isEmbeddings:
-        user_backend_list = os.environ.get("SPYRE_TEST_BACKEND_LIST", "sendnn")
     for backend in user_backend_list.split(","):
         test_backend_list.append(backend.strip())
     return test_backend_list
