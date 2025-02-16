@@ -6,8 +6,11 @@ Run `python -m pytest tests/spyre/test_spyre_max_new_tokens.py`.
 from typing import List, Tuple
 
 import pytest
-from spyre_util import (compare_results, generate_hf_output,
-                        generate_spyre_vllm_output)
+from spyre_util import (
+    compare_results,
+    generate_hf_output,
+    generate_spyre_vllm_output,
+)
 
 from vllm import SamplingParams
 
@@ -22,14 +25,19 @@ prompt2 = template.format("Provide a list of instructions for preparing "
 
 
 @pytest.mark.parametrize("model", ["/models/llama-194m"])
-@pytest.mark.parametrize("prompts", [[prompt1, prompt2, prompt2, prompt2],
-                                     [prompt2, prompt2, prompt2, prompt1],
-                                     [prompt2, prompt2, prompt2, prompt2]])
+@pytest.mark.parametrize(
+    "prompts",
+    [
+        [prompt1, prompt2, prompt2, prompt2],
+        [prompt2, prompt2, prompt2, prompt1],
+        [prompt2, prompt2, prompt2, prompt2],
+    ],
+)
 @pytest.mark.parametrize("stop_last", [True, False])
 @pytest.mark.parametrize("warmup_shape", [(64, 10, 4)]
                          )  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend",
-                         ["eager"])  #, "inductor", "sendnn_decoder"])
+                         ["eager"])  # , "inductor", "sendnn_decoder"])
 def test_output(
     model: str,
     prompts: List[str],
@@ -57,13 +65,15 @@ def test_output(
         max_tokens=max_new_tokens_warmup,
         temperature=0,
         logprobs=0,  # return logprobs of generated tokens only
-        ignore_eos=False)
+        ignore_eos=False,
+    )
 
     vllm_sampling_params_early_stop = SamplingParams(
         max_tokens=max_new_tokens_early_stop,
         temperature=0,
         logprobs=0,  # return logprobs of generated tokens only
-        ignore_eos=False)
+        ignore_eos=False,
+    )
 
     vllm_sampling_params = [vllm_sampling_params_normal] * 3
     hf_max_new_tokens = [max_new_tokens_warmup] * 3
@@ -87,16 +97,19 @@ def test_output(
         block_size=2048,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
-        backend=backend)
+        backend=backend,
+    )
 
     hf_results = generate_hf_output(model=model,
                                     prompts=prompts,
                                     max_new_tokens=hf_max_new_tokens)
 
-    compare_results(model=model,
-                    prompts=prompts,
-                    warmup_shapes=[warmup_shape],
-                    tensor_parallel_size=1,
-                    backend=backend,
-                    vllm_results=vllm_results,
-                    hf_results=hf_results)
+    compare_results(
+        model=model,
+        prompts=prompts,
+        warmup_shapes=[warmup_shape],
+        tensor_parallel_size=1,
+        backend=backend,
+        vllm_results=vllm_results,
+        hf_results=hf_results,
+    )

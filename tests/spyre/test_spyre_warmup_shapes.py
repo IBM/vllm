@@ -7,12 +7,13 @@ from typing import List, Tuple
 
 import pytest
 from spyre_util import (compare_results, generate_hf_output,
-                        generate_spyre_vllm_output)
+                        generate_spyre_vllm_output, get_spyre_backend_list,
+                        get_spyre_model_list)
 
 from vllm import SamplingParams
 
 
-@pytest.mark.parametrize("model", ["/models/llama-194m"])
+@pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("prompts", [
     7 * [
         "Hello",
@@ -21,13 +22,13 @@ from vllm import SamplingParams
         "the user. Provide a list of instructions for preparing chicken soup"
         " for a family of four. Indicate if the weather forecast looks good "
         "for today. Explain in a brief summary comprised of at most 50 words"
-        " what you are."
+        " what you are.",
     ]
-])
+    ],
+)
 @pytest.mark.parametrize("warmup_shapes", [[(64, 20, 8), (128, 20, 4)]]
                          )  # (prompt_length/new_tokens/batch_size)
-@pytest.mark.parametrize("backend",
-                         ["eager"])  #, "inductor", "sendnn_decoder"])
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_output(
     model: str,
     prompts: List[str],
@@ -60,7 +61,8 @@ def test_output(
         max_tokens=max_new_tokens,
         temperature=0,
         logprobs=0,  # return logprobs of generated tokens only
-        ignore_eos=True)
+        ignore_eos=True,
+    )
 
     vllm_results = generate_spyre_vllm_output(
         model=model,
@@ -70,16 +72,19 @@ def test_output(
         block_size=2048,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
-        backend=backend)
+        backend=backend,
+    )
 
     hf_results = generate_hf_output(model=model,
                                     prompts=prompts,
                                     max_new_tokens=max_new_tokens)
 
-    compare_results(model=model,
-                    prompts=prompts,
-                    warmup_shapes=warmup_shapes,
-                    tensor_parallel_size=1,
-                    backend=backend,
-                    vllm_results=vllm_results,
-                    hf_results=hf_results)
+    compare_results(
+        model=model,
+        prompts=prompts,
+        warmup_shapes=warmup_shapes,
+        tensor_parallel_size=1,
+        backend=backend,
+        vllm_results=vllm_results,
+        hf_results=hf_results,
+    )
