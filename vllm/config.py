@@ -1257,7 +1257,6 @@ class ParallelConfig:
     # will be determined based on the platform.
     worker_cls: str = "auto"
     sd_worker_cls: str = "auto"
-    scheduler_cls: str = "vllm.core.scheduler.Scheduler"
 
     world_size: int = field(init=False)
 
@@ -1427,6 +1426,9 @@ class SchedulerConfig:
     policy: str = "fcfs"
 
     chunked_prefill_enabled: bool = field(init=False)
+
+    # scheduler class or path
+    scheduler_cls: Union[str, Type[object]] = "vllm.core.scheduler.Scheduler"
 
     def compute_hash(self) -> str:
         """
