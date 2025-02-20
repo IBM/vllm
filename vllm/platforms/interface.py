@@ -47,7 +47,6 @@ class PlatformEnum(enum.Enum):
     NEURON = enum.auto()
     OPENVINO = enum.auto()
     OOT = enum.auto()
-    SPYRE = enum.auto()
     UNSPECIFIED = enum.auto()
 
 
@@ -129,9 +128,6 @@ class Platform:
 
     def is_openvino(self) -> bool:
         return self._enum == PlatformEnum.OPENVINO
-
-    def is_spyre(self) -> bool:
-        return self._enum == PlatformEnum.SPYRE
 
     def is_out_of_tree(self) -> bool:
         return self._enum == PlatformEnum.OOT

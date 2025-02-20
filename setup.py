@@ -383,10 +383,6 @@ def _is_cpu() -> bool:
     return VLLM_TARGET_DEVICE == "cpu"
 
 
-def _is_spyre() -> bool:
-    return VLLM_TARGET_DEVICE == "spyre"
-
-
 def _is_openvino() -> bool:
     return VLLM_TARGET_DEVICE == "openvino"
 
@@ -511,8 +507,6 @@ def get_vllm_version() -> str:
         if neuron_version != MAIN_CUDA_VERSION:
             neuron_version_str = neuron_version.replace(".", "")[:3]
             version += f"{sep}neuron{neuron_version_str}"
-    elif _is_spyre():
-        version += f"{sep}spyre"
     elif _is_hpu():
         # Get the Intel Gaudi Software Suite version
         gaudi_sw_version = str(get_gaudi_sw_version())
@@ -560,7 +554,7 @@ def get_requirements() -> List[str]:
         return resolved_requirements
 
     if _no_device():
-        requirements = _read_requirements("requirements-cuda.txt")
+        requirements = _read_requirements("requirements-common.txt")
     elif _is_cuda():
         requirements = _read_requirements("requirements-cuda.txt")
         cuda_major, cuda_minor = torch.version.cuda.split(".")
@@ -577,8 +571,6 @@ def get_requirements() -> List[str]:
         requirements = _read_requirements("requirements-rocm.txt")
     elif _is_neuron():
         requirements = _read_requirements("requirements-neuron.txt")
-    elif _is_spyre():
-        requirements = _read_requirements("requirements-spyre.txt")
     elif _is_hpu():
         requirements = _read_requirements("requirements-hpu.txt")
     elif _is_openvino():
