@@ -153,6 +153,11 @@ class Scheduler:
             num_new_tokens = min(num_new_tokens, token_budget)
             assert num_new_tokens > 0
 
+            print("[schedule] request_id:               ", request.request_id)
+            print("[schedule] total_prefill_tokens:     ", request.num_tokens)
+            print("[schedule] computed_prefill_tokens:  ", request.num_computed_tokens)
+            print("[schedule] remaining_prefill_tokens: ", num_new_tokens)
+
             # Schedule encoder inputs.
             encoder_inputs_to_schedule, num_new_tokens, new_encoder_budget = (
                 self._try_schedule_encoder_inputs(request,
@@ -299,6 +304,11 @@ class Scheduler:
                     computed_blocks.pop()
                 num_new_tokens = min(num_new_tokens, token_budget)
                 assert num_new_tokens > 0
+
+                print("[schedule] request_id:               ", request.request_id)
+                print("[schedule] total_prefill_tokens:     ", request.num_tokens)
+                print("[schedule] computed_prefill_tokens:  ", num_computed_tokens)
+                print("[schedule] remaining_prefill_tokens: ", num_new_tokens)
 
                 # Schedule encoder inputs.
                 (encoder_inputs_to_schedule, num_new_tokens,

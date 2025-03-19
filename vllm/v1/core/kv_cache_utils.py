@@ -403,6 +403,9 @@ def hash_block_tokens(
         # behavior of None prior to Python 3.12.
         parent_block_hash = hash('None')
 
+    # tpa
+    extra_keys = None
+
     curr_block_token_ids_tuple = tuple(curr_block_token_ids)
     return BlockHashType(
         hash((parent_block_hash, curr_block_token_ids_tuple, extra_keys)),

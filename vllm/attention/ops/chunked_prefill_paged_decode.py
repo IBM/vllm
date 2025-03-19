@@ -82,6 +82,8 @@ def kernel_paged_attention_2d(
     dim_mask = tl.where(tl.arange(0, HEAD_SIZE_PADDED) < HEAD_SIZE, 1,
                         0).to(tl.int1)
 
+    block_mask = tl.where(tl.arange(0, 16) < BLOCK_SIZE, 1, 0).to(tl.int1)
+
     # Q : (num_queries_per_kv, HEAD_SIZE,)
     Q = tl.load(
         query_ptr + query_offset + tl.arange(0, HEAD_SIZE_PADDED)[None, :],
@@ -112,7 +114,7 @@ def kernel_paged_attention_2d(
 
         physical_block_idx = tl.load(block_tables_ptr + block_table_offset + j)
 
-        offs_n = tl.arange(0, BLOCK_SIZE)
+        offs_n = tl.arange(0, 16)
         offs_d = tl.arange(0, HEAD_SIZE_PADDED)
 
         v_offset = (physical_block_idx * stride_v_cache_0 +
@@ -128,7 +130,7 @@ def kernel_paged_attention_2d(
 
         # K : (HEAD_SIZE, BLOCK_SIZE)
         K_load = tl.load(key_cache_ptr + k_offset,
-                         mask=dim_mask[:, None],
+                         mask=dim_mask[:, None] & block_mask[None,:],
                          other=0.0)
 
         if K_load.dtype.is_fp8():
@@ -138,7 +140,7 @@ def kernel_paged_attention_2d(
 
         # V : (BLOCK_SIZE, HEAD_SIZE)
         V_load = tl.load(value_cache_ptr + v_offset,
-                         mask=dim_mask[None, :],
+                         mask=dim_mask[None, :] & block_mask[:,None],
                          other=0.0)
 
         if V_load.dtype.is_fp8():
@@ -146,12 +148,12 @@ def kernel_paged_attention_2d(
         else:
             V = V_load
 
-        seq_offset = j * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-        boundary = tl.full([BLOCK_SIZE], seq_len, dtype=tl.int32)
+        seq_offset = j * BLOCK_SIZE + tl.arange(0, 16)
+        boundary = tl.full([16], seq_len, dtype=tl.int32)
         seq_mask = seq_offset[None, :] < boundary
 
-        # S : (num_queries_per_kv, BLOCK_SIZE,)
-        S = tl.where(head_mask[:, None] & seq_mask, 0.0,
+        # S : (num_queries_per_kv, 16,)
+        S = tl.where(head_mask[:, None] & seq_mask & block_mask[None,:], 0.0,
                      float("-inf")).to(tl.float32)
         S += scale * tl.dot(Q, K)
 
@@ -170,6 +172,8 @@ def kernel_paged_attention_2d(
 
         # P : (num_queries_per_kv, BLOCK_SIZE,)
         P = tl.exp(S - m_j[:, None])
+
+        P = tl.where(block_mask[None,:], P, 0)
 
         # l_j : (num_queries_per_kv,)
         l_j = tl.sum(P, axis=1)
