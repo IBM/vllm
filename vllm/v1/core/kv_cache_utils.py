@@ -11,6 +11,7 @@ from vllm.v1.kv_cache_interface import (KVCacheConfig, KVCacheSpec,
                                         KVCacheTensor)
 from vllm.v1.metrics.stats import PrefixCacheStats
 from vllm.v1.request import Request
+import vllm.envs as envs
 
 logger = init_logger(__name__)
 
@@ -403,8 +404,8 @@ def hash_block_tokens(
         # behavior of None prior to Python 3.12.
         parent_block_hash = hash('None')
 
-    # tpa
-    extra_keys = None
+    if envs.VLLM_V1_USE_ACTIVATED_LORA:
+        extra_keys = None
 
     curr_block_token_ids_tuple = tuple(curr_block_token_ids)
     return BlockHashType(

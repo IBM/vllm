@@ -95,7 +95,7 @@ if TYPE_CHECKING:
     VLLM_DP_MASTER_PORT: int = 0
     VLLM_MARLIN_USE_ATOMIC_ADD: bool = False
     VLLM_V0_USE_OUTLINES_CACHE: bool = False
-
+    VLLM_V1_USE_ACTIVATED_LORA: bool = False
 
 def get_default_cache_root():
     return os.getenv(
@@ -619,6 +619,11 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # an environment with potentially malicious users.
     "VLLM_V0_USE_OUTLINES_CACHE":
     lambda: os.environ.get("VLLM_V0_USE_OUTLINES_CACHE", "0") == "1",
+
+    # Whether to enable activated LoRA
+    "VLLM_V1_USE_ACTIVATED_LORA":
+    lambda: os.environ.get("VLLM_V1_USE_ACTIVATED_LORA", "0") == "1",
+
 }
 
 # end-env-vars-definition
