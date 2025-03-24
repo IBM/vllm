@@ -2,6 +2,8 @@ import os
 import torch
 
 os.environ['VLLM_USE_V1'] = "1"
+os.environ['VLLM_V1_USE_ACTIVATED_LORA'] = "1"
+
 
 from vllm import LLM, SamplingParams
 from vllm.lora.request import LoRARequest
