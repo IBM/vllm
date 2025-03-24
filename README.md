@@ -20,8 +20,8 @@ Easy, fast, and cheap LLM serving for everyone
 This is an IBM-internal fork of vLLM that we are using to develop the following new features for granite.runtime:
 
 - [x] Activated LoRA.
-- [] Span parsing and KV cache fan-in.
-- [] KV cache offload to local SSD.
+- [ ] Span parsing and KV cache fan-in.
+- [ ] KV cache offload to local SSD.
 
 The idea is that the main branch of this repo should not diverge significantly from upstream beyond changes required to enable these features.
 We will try to rebase against upstream frequently and we plan to contribute these changes to the upstream repository in the future.
