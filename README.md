@@ -15,6 +15,20 @@ Easy, fast, and cheap LLM serving for everyone
 
 ---
 
+## What is the purpose of this fork?
+
+This is an IBM-internal fork of vLLM that we are using to develop the following new features for granite.runtime:
+
+- [x] Activated LoRA.
+- [] Span parsing and KV cache fan-in.
+- [] KV cache offload to local SSD.
+
+The idea is that the main branch of this repo should not diverge significantly from upstream beyond changes required to enable these features.
+We will try to rebase against upstream frequently and we plan to contribute these changes to the upstream repository in the future.
+
+---
+
+
 [2025/03] We are collaborating with Ollama to host an [Inference Night](https://lu.ma/vllm-ollama) at Y Combinator in San Francisco on Thursday, March 27, at 6 PM. Discuss all things inference local or data center!
 
 [2025/04] We're hosting our first-ever *vLLM Asia Developer Day* in Singapore on *April 3rd*! This is a full-day event (9 AM - 9 PM SGT) in partnership with SGInnovate, AMD, and Embedded LLM. Meet the vLLM team and learn about LLM inference for RL, MI300X, and more! [Register Now](https://www.sginnovate.com/event/limited-availability-morning-evening-slots-remaining-inaugural-vllm-asia-developer-day)
