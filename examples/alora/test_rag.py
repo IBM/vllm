@@ -9,28 +9,27 @@ import copy
 BLOCK_SIZE = 16
 N_OUTPUT_TOKENS = 100
 USE_ALORA = False
-BATCH_SIZE = 1
+BATCH_SIZE = 64
 VERIFY=False
 
 os.environ['VLLM_USE_V1'] = "1"
-
-
 os.environ['VLLM_V1_USE_ACTIVATED_LORA'] = "1" if USE_ALORA else "0"
+os.environ['VLLM_V1_USE_DEMO_LOGGING'] = "0"
 
 from vllm import LLM, SamplingParams
 from vllm.lora.request import LoRARequest
 from vllm.distributed import cleanup_dist_env_and_memory
 import math
 
-model_path="ibm-granite/granite-3.1-8b-instruct"
+MODEL_PATH="ibm-granite/granite-3.1-8b-instruct"
 
 if USE_ALORA:
-    lora_path = "/home/zrltpa/vllm/examples/feb6_8bsft_alora_sz32_certainty/"
+    LORA_PATH = "/home/zrltpa/alora/adapters/feb6_8bsft_alora_sz32_certainty/"
 else:
-    lora_path = "/home/zrltpa/vllm/examples/feb6_8bsft_standard_lora_sz6_certainty/"
+    LORA_PATH = "/home/zrltpa/alora/adapters/feb6_8bsft_standard_lora_sz6_certainty/"
 
 llm = LLM(
-    model=model_path,
+    model=MODEL_PATH,
     enable_lora=True,
     enforce_eager=True,
     max_lora_rank=32,
@@ -42,7 +41,7 @@ llm = LLM(
 
 tokenizer = llm.get_tokenizer()
 
-with open('control1024N_mar3_55baseshort.jsonl') as f:
+with open('/home/zrltpa/alora/prompts/control1024N_mar3_55baseshort.jsonl') as f:
     data = [json.loads(line) for line in f]
 
 
@@ -59,7 +58,6 @@ for idx in range(len(data)):
         tokenize=False,
         add_generation_prompt=True
     )
-
 
     input_tokens = tokenizer(input_text)['input_ids']
 
@@ -146,24 +144,24 @@ t0 = time.time()
 outputs = llm.generate(
     prompts,
     sampling_params,
-    lora_request=LoRARequest("tpa-test", 1, lora_path),
+    lora_request=LoRARequest("tpa-test", 1, LORA_PATH),
 )
 t_elap += time.time()-t0
-
-print("Generate time: %.2f seconds" % (t_gen))
-print(      "UQ time: %.2f seconds" % (t_elap))
-
 
 for idx in range(len(data)):
     print(idx, repr(outputs[idx].outputs[0].text))
 
+print("Generate time: %.2f seconds" % (t_gen))
+print("UQ time:       %.2f seconds" % (t_elap))
+print("E2E time:      %.2f seconds" % (t_gen+t_elap))
 
-del llm
-cleanup_dist_env_and_memory()
-
-n_mismatch = 0
 
 if VERIFY and USE_ALORA:
+
+    del llm
+    cleanup_dist_env_and_memory()
+
+    n_mismatch = 0
 
     import torch,os, copy
     from transformers import AutoTokenizer,  AutoModelForCausalLM, DynamicCache
@@ -173,10 +171,10 @@ if VERIFY and USE_ALORA:
     token = os.getenv("HF_MISTRAL_TOKEN")
     device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     torch.set_default_dtype(torch.float16)
-    tokenizer = AutoTokenizer.from_pretrained(model_path,padding_side='left',trust_remote_code=True, token=token)
-    model_base = AutoModelForCausalLM.from_pretrained(model_path,device_map="auto")
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH,padding_side='left',trust_remote_code=True, token=token)
+    model_base = AutoModelForCausalLM.from_pretrained(MODEL_PATH,device_map="auto")
 
-    model_alora = PeftModelForCausalLM.from_pretrained(model_base, lora_path, adapter_name="certainty", response_token_ids = None)
+    model_alora = PeftModelForCausalLM.from_pretrained(model_base, LORA_PATH, adapter_name="certainty", response_token_ids = None)
     model_alora.set_adapter("certainty")
 
     for idx in range(len(data)):

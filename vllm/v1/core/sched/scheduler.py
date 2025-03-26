@@ -23,6 +23,7 @@ from vllm.v1.metrics.stats import SchedulerStats
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request, RequestStatus
 from vllm.v1.structured_output import StructuredOutputManager
+import vllm.envs as envs
 
 logger = init_logger(__name__)
 
@@ -154,6 +155,13 @@ class Scheduler(SchedulerInterface):
                               request.num_computed_tokens)
             num_new_tokens = min(num_new_tokens, token_budget)
             assert num_new_tokens > 0
+
+            if envs.VLLM_V1_USE_DEMO_LOGGING:
+                if num_new_tokens > 1:
+                    logger.info("request_id:          %s", request.request_id)
+                    logger.info("num_tokens:          %d", request.num_tokens)
+                    logger.info("num_computed_tokens: %d", request.num_computed_tokens)
+                    logger.info("num_new_tokens:      %d", num_new_tokens)
 
             # Schedule encoder inputs.
             encoder_inputs_to_schedule, num_new_tokens, new_encoder_budget = (
@@ -301,6 +309,12 @@ class Scheduler(SchedulerInterface):
                     computed_blocks.pop()
                 num_new_tokens = min(num_new_tokens, token_budget)
                 assert num_new_tokens > 0
+
+                if envs.VLLM_V1_USE_DEMO_LOGGING:
+                    logger.info("request_id:          %s", request.request_id)
+                    logger.info("num_tokens:          %d", request.num_tokens)
+                    logger.info("num_computed_tokens: %d", num_computed_tokens)
+                    logger.info("num_new_tokens:      %d", num_new_tokens)
 
                 # Schedule encoder inputs.
                 (encoder_inputs_to_schedule, num_new_tokens,
