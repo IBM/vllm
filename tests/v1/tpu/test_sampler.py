@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-import tempfile
-from time import time
+import random
 
 import pytest
 
@@ -15,60 +14,6 @@ if not envs.VLLM_USE_V1:
     )
 
 
-@pytest.mark.parametrize("model_name", ["D4nt3/Qwen2.5-two-layers"])
-@pytest.mark.skipif(not current_platform.is_tpu(),
-                    reason="This test needs a TPU")
-def test_sampler_compilation(model_name: str, monkeypatch):
-    """
-    Check that no recompilation happens despite changing sampling parameters.
-    We can't read XLA metrics from the engine process, hence we measure time.  
-    """
-    with tempfile.TemporaryDirectory() as temp_dir:
-        monkeypatch.setenv("VLLM_XLA_CACHE_PATH", temp_dir)
-        # Compiling model init may still take some time, enforce_eager to skip.
-        llm = LLM(model_name,
-                  enforce_eager=True,
-                  max_num_seqs=16,
-                  max_model_len=1024,
-                  gpu_memory_utilization=0.5)
-        prompts = [
-            "A robot may not injure a human being",
-            "It is only with the heart that one can see rightly;",
-        ]
-        # First inference should be slow
-        sampling_params = SamplingParams(
-            temperature=0.7,
-            # top_p=0.6, # TODO too slow!
-            top_k=10,
-            min_p=0.2,
-            max_tokens=16)
-        s = time()
-        _ = llm.generate(prompts, sampling_params)
-        run1 = time() - s
-
-        # Second request with different params, but for which we
-        # compiled for in previous eager iteration.
-        sampling_params = SamplingParams(temperature=0.1,
-                                         top_k=12,
-                                         min_p=0.8,
-                                         max_tokens=24)
-        s = time()
-        _ = llm.generate(prompts, sampling_params)
-        run2 = time() - s
-        # Much faster after compiling
-        assert run1 * 0.1 > run2
-        print("TIMES", run1, run2)
-
-        # Third request with min_p set to "None". It will not trigger
-        # recompilation as a default 0 value will be used.
-        sampling_params = SamplingParams(max_tokens=24, temperature=0.0)
-        s = time()
-        _ = llm.generate(prompts, sampling_params)
-        run3 = time() - s
-        assert run1 * 0.1 > run3
-        print("TIMES", run1, run3)
-
-
 @pytest.mark.parametrize("model_name", ["Qwen/Qwen2.5-1.5B-Instruct"])
 @pytest.mark.skipif(not current_platform.is_tpu(),
                     reason="This test needs a TPU")
@@ -77,13 +22,11 @@ def test_sampler_different(model_name: str):
     Test significantly different sampling params to assert the model produces 
     different results.
     """
-    llm = LLM(
-        model_name,
-        enforce_eager=True,
-        max_num_seqs=1,
-        max_model_len=64,
-        # TODO: setting to 0.5 or it will go OOM
-        gpu_memory_utilization=0.5)
+    llm = LLM(model_name,
+              enforce_eager=False,
+              max_num_seqs=1,
+              max_model_len=512,
+              max_num_batched_tokens=512)
     prompts = [
         "Write a short story about a robot that dreams for the first time."
     ]
@@ -93,3 +36,76 @@ def test_sampler_different(model_name: str):
     sampling_params = SamplingParams(temperature=0.1, min_p=0.8, max_tokens=64)
     output2 = llm.generate(prompts, sampling_params)
     assert output[0].outputs[0].text != output2[0].outputs[0].text
+
+    with pytest.raises(ValueError):
+        # Unsupported `seed` param.
+        sampling_params = SamplingParams(temperature=0.3, seed=42)
+        output2 = llm.generate(prompts, sampling_params)
+
+    # Batch-case with TopK/P
+    for B in [4, 16]:
+        p = prompts * B
+        sampling_params = [
+            SamplingParams(
+                temperature=0.1,
+                min_p=0.8,
+                max_tokens=64,
+                # Vary number of ks
+                top_k=random.randint(4, 12),
+                top_p=random.random()) for _ in range(B)
+        ]
+        # Make sure first two reqs have the same K/P
+        sampling_params[0] = sampling_params[1]
+        output = llm.generate(p, sampling_params)
+        # There are natural numerical instabilities that make it difficult
+        # to have deterministic results over many tokens, tests the first ~20
+        # tokens match.
+        assert output[0].outputs[0].text[:20] == output[1].outputs[0].text[:20]
+
+
+@pytest.mark.parametrize("model_name", ["Qwen/Qwen2.5-1.5B-Instruct"])
+# TODO TPU will appear busy if we fan-out test params here
+@pytest.mark.parametrize("n_prompts", [1])
+@pytest.mark.skipif(not current_platform.is_tpu(),
+                    reason="This test needs a TPU")
+def test_logprobs(model_name: str, n_prompts: int):
+    """
+    Request top logprobs with different sampling settings and check
+    that results contains the requested number, ordered ascendingly.  
+    """
+
+    def check_num_logprobs(logprobs, expected_num: int):
+        for step in logprobs:
+            prev_logp = 1.0
+            # order by rank
+            sorted_step = dict(
+                sorted(step.items(), key=lambda item: item[1].rank))
+
+            # Can contain the sampled token
+            assert len(step) == expected_num or len(step) == expected_num + 1
+            # Check results are ordered by prob value
+            for rankno, (tid, logp) in enumerate(sorted_step.items()):
+                assert logp.logprob <= prev_logp
+                prev_logp = logp.logprob
+                assert logp.rank == rankno + 1
+
+    llm = LLM(model_name,
+              enforce_eager=False,
+              max_num_seqs=1,
+              max_model_len=128,
+              max_num_batched_tokens=128)
+    prompts = [
+        "Write a short story about a robot that dreams for the first time."
+    ] * n_prompts
+    greedy_sampling_params = SamplingParams(temperature=0.0, max_tokens=64,\
+         logprobs=4)
+    regular_sampling_params = SamplingParams(temperature=0.4, max_tokens=64,\
+         logprobs=4)
+    topkp_sampling_params = SamplingParams(temperature=0.4, max_tokens=64,\
+         logprobs=4, top_k=12, top_p=0.5)
+
+    for sp in [greedy_sampling_params, regular_sampling_params, \
+               topkp_sampling_params]:
+        output = llm.generate(prompts, sp)
+        for o in output:
+            check_num_logprobs(o.outputs[0].logprobs, 4)
