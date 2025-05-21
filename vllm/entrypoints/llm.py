@@ -1438,7 +1438,9 @@ class LLM:
         return params
 
     def _run_engine(
-            self, *, use_tqdm: bool
+        self, 
+        *, 
+        use_tqdm: bool,
     ) -> list[Union[RequestOutput, PoolingRequestOutput]]:
         # Initialize tqdm.
         if use_tqdm:
@@ -1455,11 +1457,24 @@ class LLM:
         outputs: list[Union[RequestOutput, PoolingRequestOutput]] = []
         total_in_toks = 0
         total_out_toks = 0
+
+        # ####### START EXPERIMENT 2 #######
+        current_steps = 0
+        # cur_lora: dict[int, int] = {} # [sequence ID, current lora ID (0 = base model)]
+        # ######## END EXPERIMENT 2 ########
+        
         while self.llm_engine.has_unfinished_requests():
-            step_outputs = self.llm_engine.step()
-            for output in step_outputs:
-                if output.finished:
-                    outputs.append(output)
+            # ####### START EXPERIMENT 2 #######
+            current_steps += 1
+            # step_outputs = self.llm_engine.step(changeLora = True, curStep = current_steps)
+            step_outputs = self.llm_engine.step(curStep = current_steps)
+            # ######## END EXPERIMENT 2 ########
+
+            # step_outputs = self.llm_engine.step()
+            
+            for output in step_outputs: # go through each sequence
+                if output.finished: # if response to sequence is finished generating
+                    outputs.append(output) # output.lora_request refers to lora (or None) associated with initial sequence request
                     if use_tqdm:
                         if isinstance(output, RequestOutput):
                             # Calculate tokens only for RequestOutput

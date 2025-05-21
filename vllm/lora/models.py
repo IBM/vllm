@@ -67,6 +67,7 @@ class LoRAModel(AdapterModel):
         rank: int,
         loras: Dict[str, LoRALayerWeights],
         scaling_factor: Optional[float] = None,
+        invocation_tokens: Optional[list[int]] = [],
     ) -> None:
         """
         Args:
@@ -85,6 +86,7 @@ class LoRAModel(AdapterModel):
             > 0), f"a valid lora id should be greater than 0, got {self.id}"
         self.rank = rank
         self.loras: Dict[str, LoRALayerWeights] = loras
+        self.invocation_tokens: list[int] = invocation_tokens
 
     def clone(self, lora_model_id: int) -> "LoRAModel":
         """Return a copy of the object with different ids.
@@ -94,6 +96,7 @@ class LoRAModel(AdapterModel):
             lora_model_id,
             rank=self.rank,
             loras=self.loras.copy(),
+            invocation_tokens=self.invocation_tokens,
         )
 
     @property
@@ -181,7 +184,8 @@ class LoRAModel(AdapterModel):
         return cls(lora_model_id,
                    peft_helper.r,
                    loras,
-                   scaling_factor=peft_helper.vllm_long_context_scaling_factor)
+                   scaling_factor=peft_helper.vllm_long_context_scaling_factor,
+                   invocation_tokens=peft_helper.invocation_tokens) # added this for aLoRA
 
     @classmethod
     def from_local_checkpoint(

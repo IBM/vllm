@@ -87,10 +87,25 @@ class LlamaMLP(nn.Module):
                              "Only silu is supported for now.")
         self.act_fn = SiluAndMul()
 
-    def forward(self, x):
-        x, _ = self.gate_up_proj(x)
+    def forward(self, 
+                x, 
+                k_offsets: Optional[list[int]] = None,
+                query_start_locs: Optional[list[int]] = None,
+                num_reqs: Optional[int] = 1,
+                ):
+        x, _ = self.gate_up_proj(x, 
+                                 k_offsets = k_offsets,
+                                 query_start_locs = query_start_locs,
+                                 num_reqs=num_reqs,
+                                 )
+        # x, _ = self.gate_up_proj(x)
         x = self.act_fn(x)
-        x, _ = self.down_proj(x)
+        x, _  = self.down_proj(x, 
+                               k_offsets = k_offsets,
+                               query_start_locs = query_start_locs,
+                               num_reqs=num_reqs,
+                               )
+        # x, _  = self.down_proj(x)
         return x
 
 
@@ -201,12 +216,26 @@ class LlamaAttention(nn.Module):
         self,
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
+        k_offsets: Optional[list[int]] = None,
+        query_start_locs: Optional[list[int]] = None,
+        num_reqs: Optional[int] = 1,
     ) -> torch.Tensor:
-        qkv, _ = self.qkv_proj(hidden_states)
+        
+        qkv, _ = self.qkv_proj(hidden_states, 
+                               k_offsets = k_offsets,
+                               query_start_locs = query_start_locs,
+                               num_reqs=num_reqs,
+                               )
+        # qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         q, k = self.rotary_emb(positions, q, k)
         attn_output = self.attn(q, k, v)
-        output, _ = self.o_proj(attn_output)
+        output, _ = self.o_proj(attn_output, 
+                                k_offsets = k_offsets,
+                                query_start_locs = query_start_locs,
+                                num_reqs=num_reqs,
+                                )
+        # output, _ = self.o_proj(attn_output)
         return output
 
 
@@ -271,21 +300,36 @@ class LlamaDecoderLayer(nn.Module):
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
         residual: Optional[torch.Tensor],
+        k_offsets: Optional[list[int]] = None,
+        query_start_locs: Optional[list[int]] = None,
+        num_reqs: Optional[int] = 1,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # Self Attention
+        
         if residual is None:
             residual = hidden_states
             hidden_states = self.input_layernorm(hidden_states)
         else:
             hidden_states, residual = self.input_layernorm(
                 hidden_states, residual)
-        hidden_states = self.self_attn(positions=positions,
-                                       hidden_states=hidden_states)
+            
+        hidden_states = self.self_attn(positions=positions, 
+                                       hidden_states=hidden_states, 
+                                       k_offsets = k_offsets, 
+                                       query_start_locs = query_start_locs,
+                                       num_reqs=num_reqs,
+                                       )
+        # hidden_states = self.self_attn(positions=positions, hidden_states=hidden_states)
 
         # Fully Connected
         hidden_states, residual = self.post_attention_layernorm(
             hidden_states, residual)
-        hidden_states = self.mlp(hidden_states)
+        hidden_states = self.mlp(hidden_states, 
+                                 k_offsets = k_offsets, 
+                                 query_start_locs = query_start_locs,
+                                 num_reqs=num_reqs,
+                                 )
+        # hidden_states = self.mlp(hidden_states)
         return hidden_states, residual
 
 
@@ -554,9 +598,19 @@ class LlamaForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         positions: torch.Tensor,
         intermediate_tensors: Optional[IntermediateTensors] = None,
         inputs_embeds: Optional[torch.Tensor] = None,
+        k_offsets: Optional[list[int]] = None,
+        query_start_locs: Optional[list[int]] = None,
+        num_reqs: Optional[int] = 1,
     ) -> Union[torch.Tensor, IntermediateTensors]:
-        model_output = self.model(input_ids, positions, intermediate_tensors,
-                                  inputs_embeds)
+        model_output = self.model(input_ids, 
+                                  positions, 
+                                  intermediate_tensors, 
+                                  inputs_embeds, 
+                                  k_offsets=k_offsets, 
+                                  query_start_locs = query_start_locs,
+                                  num_reqs=num_reqs,
+                                  )
+        # model_output = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
         return model_output
 
     def compute_logits(

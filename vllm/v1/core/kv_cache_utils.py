@@ -15,6 +15,7 @@ from vllm.v1.kv_cache_interface import (FullAttentionSpec, KVCacheConfig,
 from vllm.v1.metrics.stats import PrefixCacheStats
 from vllm.v1.request import Request
 import vllm.envs as envs
+import vllm.envs as envs
 
 logger = init_logger(__name__)
 

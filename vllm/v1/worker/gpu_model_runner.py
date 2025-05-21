@@ -286,6 +286,8 @@ class GPUModelRunner(LoRAModelRunnerMixin):
                                         pin_memory=self.pin_memory)
         self.seq_lens_np = self.seq_lens_cpu.numpy()
 
+        self.req_id_to_offset: dict[int, int] = {}
+
     def _update_states(self, scheduler_output: "SchedulerOutput") -> None:
         """Update the cached states and the persistent batch with the scheduler
         output.
@@ -337,6 +339,22 @@ class GPUModelRunner(LoRAModelRunnerMixin):
             assert req_index is not None
             removed_req_indices.append(req_index)
 
+
+        # Extract k_offsets for each new scheduled req
+        for new_req_data in scheduler_output.scheduled_new_reqs:
+            req_id = new_req_data.req_id
+            lora_id = new_req_data.lora_request.lora_int_id
+            lora_model = self.lora_manager._adapter_manager._registered_adapters[lora_id]
+            invocation_tokens = lora_model.invocation_tokens
+
+            num_invocation_tokens = len(invocation_tokens)
+
+            # If invocation_sequence of lora corresponding to this sequence is present in the prompt,
+            # add k_offset field
+            if new_req_data.prompt_token_ids[-num_invocation_tokens-1:-1] == invocation_tokens:
+                self.req_id_to_offset[req_id] = num_invocation_tokens + 1
+
+
         req_ids_to_add: list[str] = []
         # Add new requests to the cached states.
         for new_req_data in scheduler_output.scheduled_new_reqs:
@@ -359,6 +377,7 @@ class GPUModelRunner(LoRAModelRunnerMixin):
                 num_computed_tokens=new_req_data.num_computed_tokens,
                 output_token_ids=[],
                 lora_request=new_req_data.lora_request,
+                k_offset=self.req_id_to_offset[req_id], # updated
             )
 
             # Only relevant for models using M-RoPE (e.g, Qwen2-VL)
@@ -488,6 +507,7 @@ class GPUModelRunner(LoRAModelRunnerMixin):
 
         if batch_changed or batch_reordered:
             self.input_batch.refresh_sampling_metadata()
+
 
     def _prepare_inputs(
         self,
@@ -650,8 +670,11 @@ class GPUModelRunner(LoRAModelRunnerMixin):
         # Hot-Swap lora model
         if self.lora_config:
             self.set_active_loras(self.input_batch, num_scheduled_tokens)
+            enable_lora = True
+        else:
+            enable_lora = False
 
-        return attn_metadata, logits_indices, spec_decode_metadata
+        return attn_metadata, logits_indices, spec_decode_metadata, enable_lora
 
     def _compute_cascade_attn_prefix_len(
         self,
@@ -1051,7 +1074,7 @@ class GPUModelRunner(LoRAModelRunnerMixin):
             return EMPTY_MODEL_RUNNER_OUTPUT
 
         # Prepare the decoder inputs.
-        attn_metadata, logits_indices, spec_decode_metadata = (
+        attn_metadata, logits_indices, spec_decode_metadata, enable_lora = (
             self._prepare_inputs(scheduler_output))
         num_scheduled_tokens = scheduler_output.total_num_scheduled_tokens
         if (self.use_cuda_graph
@@ -1119,6 +1142,20 @@ class GPUModelRunner(LoRAModelRunnerMixin):
                 k: v[:num_input_tokens]
                 for k, v in self.intermediate_tensors.items()
             })
+        
+        # Fill in k_offsets based on the `scheduled_new_reqs` and `scheduled_cached_reqs` within the SchedulerOutput.
+        k_offsets = [600] * self.input_batch.num_reqs # Initial values shouldn't matter because they should be overwritten.
+                                                      # Lora apply() within layers.py should not use the offset if sequence is generating,
+                                                      # in which case seq_len should == 1
+        for new_req_data in scheduler_output.scheduled_new_reqs:
+            req_id = new_req_data.req_id
+            req_index = self.input_batch.req_id_to_index(req_id)
+            k_offsets[req_index] = self.requests[req_id].k_offset
+
+        for cached_req_data in scheduler_output.scheduled_cached_reqs:
+            req_id = cached_req_data.req_id
+            req_index = self.input_batch.req_id_to_index(req_id)
+            k_offsets[req_index] = self.requests[req_id].k_offset
 
         # Run the decoder.
         # Use persistent buffers for CUDA graphs.
@@ -1130,6 +1167,10 @@ class GPUModelRunner(LoRAModelRunnerMixin):
                 positions=positions,
                 intermediate_tensors=intermediate_tensors,
                 inputs_embeds=inputs_embeds,
+                k_offsets=k_offsets, # added k_offsets for batch alora activation
+                query_start_locs=self.query_start_loc_np.tolist(), # added this to know where to start counting k_offsets from
+                num_reqs=self.input_batch.num_reqs,
+                enable_lora=enable_lora,
             )
 
         if self.use_aux_hidden_state_outputs:

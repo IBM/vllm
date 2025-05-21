@@ -81,10 +81,17 @@ class GraniteMLP(nn.Module):
                              "Only silu is supported for now.")
         self.act_fn = SiluAndMul()
 
-    def forward(self, x):
-        gate_up, _ = self.gate_up_proj(x)
+    def forward(self, 
+                x,
+                **kwargs,
+                ):
+        gate_up, _ = self.gate_up_proj(x,
+                                       **kwargs,
+                                       )
         x = self.act_fn(gate_up)
-        x, _ = self.down_proj(x)
+        x, _ = self.down_proj(x, 
+                              **kwargs,
+                              )
         return x
 
 
@@ -165,12 +172,17 @@ class GraniteAttention(nn.Module):
         self,
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
+        **kwargs,
     ) -> torch.Tensor:
-        qkv, _ = self.qkv_proj(hidden_states)
+        qkv, _ = self.qkv_proj(hidden_states,
+                               **kwargs,
+                               )
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         q, k = self.rotary_emb(positions, q, k)
         attn_output = self.attn(q, k, v)
-        output, _ = self.o_proj(attn_output)
+        output, _ = self.o_proj(attn_output,
+                                **kwargs,
+                                )
         return output
 
 
@@ -230,6 +242,7 @@ class GraniteDecoderLayer(nn.Module):
         self,
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
+        **kwargs,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # Self Attention
         residual = hidden_states
@@ -237,12 +250,15 @@ class GraniteDecoderLayer(nn.Module):
         hidden_states = self.self_attn(
             positions=positions,
             hidden_states=hidden_states,
+            **kwargs,
         )
         hidden_states = residual + hidden_states * self.residual_multiplier
         # Fully Connected
         residual = hidden_states
         hidden_states = self.post_attention_layernorm(hidden_states)
-        hidden_states = self.mlp(hidden_states)
+        hidden_states = self.mlp(hidden_states,
+                                 **kwargs,
+                                 )
         hidden_states = residual + hidden_states * self.residual_multiplier
         return hidden_states
 
@@ -295,7 +311,12 @@ class GraniteModel(nn.Module):
         positions: torch.Tensor,
         intermediate_tensors: Optional[IntermediateTensors],
         inputs_embeds: Optional[torch.Tensor] = None,
+        **kwargs,
     ) -> Union[torch.Tensor, IntermediateTensors]:
+        
+       
+       
+
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -310,7 +331,9 @@ class GraniteModel(nn.Module):
             residual = intermediate_tensors["residual"]
 
         for layer in self.layers[self.start_layer:self.end_layer]:
-            hidden_states = layer(positions, hidden_states)
+            hidden_states = layer(positions, hidden_states,
+                                  **kwargs,
+                                  )
 
         if not get_pp_group().is_last_rank:
             return IntermediateTensors({
@@ -449,9 +472,29 @@ class GraniteForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         positions: torch.Tensor,
         intermediate_tensors: Optional[IntermediateTensors] = None,
         inputs_embeds: Optional[torch.Tensor] = None,
+        k_offsets: Optional[list[int]] = None,
+        query_start_locs: Optional[list[int]] = None,
+        num_reqs: Optional[int] = 1,
+        enable_lora: Optional[bool] = False,
     ) -> Union[torch.Tensor, IntermediateTensors]:
-        model_output = self.model(input_ids, positions, intermediate_tensors,
-                                  inputs_embeds)
+        
+        args = {
+            "input_ids": input_ids,
+            "positions": positions,
+            "intermediate_tensors": intermediate_tensors,
+            "inputs_embeds": inputs_embeds,
+        }
+        # if lora enabled, pass the 3 additional fields into the model
+        # TODO: for regular lora, k_offset[i] should = 0
+        if enable_lora:
+            args['k_offsets'] = k_offsets
+            args['query_start_locs'] = query_start_locs
+            args['num_reqs'] = num_reqs
+       # print(enable_lora)
+       # print(f"inpu_ids {input_ids}")
+       # print(f"pos {positions}")
+       # print(f"query_st {query_start_locs}")
+        model_output = self.model(**args)
         return model_output
 
     def compute_logits(

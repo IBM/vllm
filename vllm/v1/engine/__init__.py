@@ -57,12 +57,16 @@ class EngineCoreRequest(
     eos_token_id: Optional[int]
     arrival_time: float
     lora_request: Optional[LoRARequest]
+<<<<<<< HEAD
     cache_salt: Optional[str]
 
     # Used in DP case to indicate which wave of requests this is expected to
     # belong to, to cover a race condition where the request is sent before
     # a wave finished notification is received.
     current_wave: int = 0
+=======
+    k_offset: int = 0
+>>>>>>> to-ibm
 
 
 class EngineCoreEventType(enum.IntEnum):

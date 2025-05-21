@@ -33,6 +33,8 @@ from vllm.model_executor.layers.vocab_parallel_embedding import (
     VocabParallelEmbedding)
 from vllm.platforms import current_platform
 
+import copy
+
 if TYPE_CHECKING:
     from vllm.lora.punica_wrapper import PunicaWrapperBase
 
@@ -248,8 +250,7 @@ class VocabParallelEmbeddingWithLoRA(BaseLayerWithLoRA):
             self.lora_a_stacked_2d,
         )
         indices = embeddings_indices[0]
-        full_output = self.base_layer.forward(x +
-                                              (indices * added_tokens_mask))
+        full_output = self.base_layer.forward(x + (indices * added_tokens_mask))
 
         full_output_org = full_output
         if full_output.ndim == 3:
@@ -400,20 +401,93 @@ class BaseLinearLayerWithLoRA(BaseLayerWithLoRA):
 
     def apply(self,
               x: torch.Tensor,
-              bias: Optional[torch.Tensor] = None) -> torch.Tensor:
+              bias: Optional[torch.Tensor] = None,
+            #   k_offsets: Optional[list[int]] = None,
+            #   query_start_locs: Optional[list[int]] = None,
+            #   num_reqs: Optional[int] = 1,
+            **kwargs,
+        ) -> torch.Tensor:
+        
+        k_offsets: Optional[list[int]] = kwargs['k_offsets'] if 'k_offsets' in kwargs else None
+        query_start_locs: Optional[list[int]] = kwargs['query_start_locs'] if 'query_start_locs' in kwargs else None
+        num_reqs: Optional[int] = kwargs['num_reqs'] if 'num_reqs' in kwargs else 1
+        #print("inside layer")
+        #print(f"query {query_start_locs}")
         output = self.base_layer.quant_method.apply(self.base_layer, x, bias)
 
+        # print(f"output shape before flatten: {output.clone().shape}")
+        # print(f"x shape before flatten: {x.clone().shape}")
+        
         # In transformers backend, x and output have extra batch dimension like
         # (1, seq_len, hidden_dim), while punica expects (seq_len, hidden_dim),
         # therefore we need to flatten the batch dimensions.
         if x.ndim == 3 and output.ndim == 3:
             output = output.flatten(0, 1)
             x = x.flatten(0, 1)
-
+        
+        # print(f"output shape after flatten: {output.shape}")
+        # print(f"x shape after flatten: {x.shape}")
+        # print(f"query_start_locs: {query_start_locs}")
+        #if 
+        output_cp = output # copy.deepcopy(output)
+        flg = 0
+           
+        # Step 1: save first (len-k) tokens from base model output
+        base_prefix_outputs = [None] * num_reqs
+        #x = output[0,4,2,3]
+        # `output` stores all outputs across all parallel queries concatenated together,
+        # so we need to save the first (len-k) tokens of each query
+        if query_start_locs is not None:
+            query_start = 0
+            query_end = 0
+      #      x = output[0,4,2,3]
+            for i in range(num_reqs):
+                query_end = query_start_locs[i + 1]
+                #print("inside layer")
+                #print(query_start)
+                #print(query_end)
+                #print(output.shape[0])
+                
+                seq_len = query_end - query_start
+                if seq_len == 1 or k_offsets is None: # check if not prefilling
+                    query_start = query_start_locs[i + 1]
+                    continue
+       #         print(query_start)
+        #        print(query_end)
+         #       print(output.shape[0])
+          #      print(f"k offsets {k_offsets}")
+                if flg == 0:
+                    output_cp = copy.deepcopy(output)
+                    flg = 1
+                base_prefix_outputs[i] = (output_cp[query_start : query_end - k_offsets[i], :])
+                query_start = query_start_locs[i + 1]
+       
+        
+        # Step 2: apply lora
         self.punica_wrapper.add_lora_linear(output, x, self.lora_a_stacked,
                                             self.lora_b_stacked,
                                             self.lora_bias_stacked, 1.0,
                                             self.output_slices)
+        
+        # Step 3: for each query, piece together the base_prefix_output to the corresponding output[-k:] to get new modified output
+        # print("Piecing together base output with last k from lora")
+        if query_start_locs is not None:
+            query_start = 0
+            query_end = 0
+            for i in range(num_reqs):
+                query_end = query_start_locs[i + 1]
+
+                seq_len = query_end - query_start
+                #x = output[0,4,3,2]
+                if seq_len == 1 or k_offsets is None: # check if not prefilling
+                    query_start = query_start_locs[i + 1]
+                    continue
+                #x = output[0,4,3,2]
+                #print(output[query_start : query_end - k_offsets[i], :])
+                #print(base_prefix_outputs)
+                output[query_start : query_end - k_offsets[i], :] = base_prefix_outputs[i]
+                query_start = query_start_locs[i + 1]
+        
         return output
 
     @property
@@ -455,7 +529,12 @@ class ReplicatedLinearWithLoRA(BaseLinearLayerWithLoRA):
         self.n_slices = 1
 
     def forward(
-        self, input_: torch.Tensor
+        self, 
+        input_: torch.Tensor, 
+        # k_offsets: Optional[list[int]] = None,
+        # query_start_locs: Optional[list[int]] = None,
+        # num_reqs: Optional[int] = 1,
+        **kwargs,
     ) -> Union[torch.Tensor, tuple[torch.Tensor, Optional[torch.Tensor]]]:
         """Forward of ReplicatedLinearWithLoRA
 
@@ -468,9 +547,12 @@ class ReplicatedLinearWithLoRA(BaseLinearLayerWithLoRA):
         """
         bias = (self.base_layer.bias
                 if not self.base_layer.skip_bias_add else None)
-
+        
         # Matrix multiply.
-        output = self.apply(input_, bias)
+        output, seq_len = self.apply(input_, 
+                                     bias,
+                                     **kwargs,
+                                     )
 
         output_bias = (self.base_layer.bias
                        if self.base_layer.skip_bias_add else None)
@@ -552,7 +634,12 @@ class ColumnParallelLinearWithLoRA(BaseLinearLayerWithLoRA):
         return bias
 
     def forward(
-        self, input_: torch.Tensor
+        self, 
+        input_: torch.Tensor, 
+        # k_offsets: Optional[list[int]] = None,
+        # query_start_locs: Optional[list[int]] = None,
+        # num_reqs: Optional[int] = 1,
+        **kwargs,
     ) -> Union[torch.Tensor, tuple[torch.Tensor, Optional[torch.Tensor]]]:
         """Forward of ColumnParallelLinear
 
@@ -565,9 +652,12 @@ class ColumnParallelLinearWithLoRA(BaseLinearLayerWithLoRA):
         """
         bias = (self.base_layer.bias
                 if not self.base_layer.skip_bias_add else None)
-
+        
         # Matrix multiply.
-        output_parallel = self.apply(input_, bias)
+        output_parallel = self.apply(input_, 
+                                     bias, 
+                                     **kwargs,
+                                     )
         if self.base_layer.gather_output:
             # All-gather across the partitions.
             output = tensor_model_parallel_all_gather(output_parallel)
@@ -900,7 +990,12 @@ class RowParallelLinearWithLoRA(BaseLinearLayerWithLoRA):
         return bias
 
     def forward(
-        self, input_: torch.Tensor
+        self, 
+        input_: torch.Tensor, 
+        # k_offsets: Optional[list[int]] = None,
+        # query_start_locs: Optional[list[int]] = None,
+        # num_reqs: Optional[int] = 1,
+        **kwargs,
     ) -> Union[torch.Tensor, tuple[torch.Tensor, Optional[torch.Tensor]]]:
         """Forward of RowParallelLinear
 
@@ -921,9 +1016,11 @@ class RowParallelLinearWithLoRA(BaseLinearLayerWithLoRA):
             splitted_input = split_tensor_along_last_dim(
                 input_, num_partitions=self.base_layer.tp_size)
             input_parallel = splitted_input[self.tp_rank].contiguous()
-
+        
         # Matrix multiply.
-        output_parallel = self.apply(input_parallel)
+        output_parallel = self.apply(input_parallel,
+                                     **kwargs,
+                                     )
         if self.base_layer.reduce_results and self.base_layer.tp_size > 1:
             output_ = tensor_model_parallel_all_reduce(output_parallel)
         else:

@@ -135,6 +135,7 @@ try:
                 scheduler_output, intermediate_tensors = scheduler_output, None
             output = self.worker.model_runner.execute_model(
                 scheduler_output, intermediate_tensors)
+                
             if isinstance(output, IntermediateTensors):
                 output = scheduler_output, output
             return output

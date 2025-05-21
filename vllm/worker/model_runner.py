@@ -1754,6 +1754,8 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
         if num_steps > 1:
             raise ValueError("num_steps > 1 is not supported in ModelRunner")
 
+        # multiple calls to execute_model() execute all prefill in 1 step and then generate 1 step at a time
+        
         if self.lora_config:
             assert model_input.lora_requests is not None
             assert model_input.lora_mapping is not None
@@ -1777,7 +1779,11 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
         # virtual engines share the same kv cache.
         virtual_engine = model_input.virtual_engine
         previous_hidden_states = kwargs.get("previous_hidden_states")
+
         if prefill_meta is None and decode_meta.use_cuda_graph:
+
+            # for generation steps, forward is called on the CUDA graph
+            
             assert model_input.input_tokens is not None
             graph_batch_size = model_input.input_tokens.shape[0]
             use_inputs_embeds = model_input.inputs_embeds is not None
@@ -1794,6 +1800,7 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
                                 device=previous_hidden_states.device)
                 ])
         else:
+            # for prefill step, forward is called on the actual llm
             model_executable = self.model
 
         # Receive KV cache in distributed KV cache transfer setting
@@ -1831,6 +1838,9 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
         if not bypass_model_exec:
             with set_forward_context(model_input.attn_metadata,
                                      self.vllm_config, virtual_engine):
+
+                # model is executed here
+                
                 hidden_or_intermediate_states = model_executable(
                     input_ids=model_input.input_tokens,
                     inputs_embeds=model_input.inputs_embeds,
@@ -1940,7 +1950,8 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
                 hidden_states = hidden_or_intermediate_states
 
             output.hidden_states = hidden_states
-
+        # print(f"Executing, prompt: {model_input}")
+        # print(f"Output: {output.outputs[0].samples[0]")
         return [output]
 
     def need_recv_kv(self, model_input, kv_caches) -> bool:
@@ -2097,6 +2108,7 @@ class CUDAGraphRunner(nn.Module):
                 "hidden_states": hidden_or_intermediate_states
             }
         else:
+            # self.output_buffers = hidden_or_intermediate_states
             self.output_buffers = hidden_or_intermediate_states
 
     def forward(
@@ -2109,6 +2121,8 @@ class CUDAGraphRunner(nn.Module):
     ) -> torch.Tensor:
         attn_metadata: AttentionMetadata = get_forward_context().attn_metadata
 
+        print("Forward through CUDAGraphRunner")
+        
         # Copy the input tensors to the input buffers.
         self.input_buffers["input_ids"].copy_(input_ids, non_blocking=True)
         if positions is not None:
@@ -2149,6 +2163,7 @@ class CUDAGraphRunner(nn.Module):
 
         # Run the graph.
         self.graph.replay()
+        
         # Return the output tensor.
         if get_pp_group().is_last_rank:
             return self.output_buffers["hidden_states"]

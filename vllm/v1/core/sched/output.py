@@ -60,6 +60,7 @@ class CachedRequestData:
     new_token_ids: list[int]
     new_block_ids: list[int]
     num_computed_tokens: int
+    k_offset: Optional[int]
 
     @classmethod
     def from_request(
@@ -75,6 +76,7 @@ class CachedRequestData:
             new_token_ids=new_token_ids,
             new_block_ids=new_block_ids,
             num_computed_tokens=request.num_computed_tokens,
+            k_offset=request.k_offset,
         )
 
 

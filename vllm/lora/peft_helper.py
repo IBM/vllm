@@ -40,6 +40,8 @@ class PEFTHelper:
     vllm_max_position_embeddings: Optional[int] = field(default=False)
     vllm_long_context_scaling_factor: Optional[float] = field(default=None)
 
+    invocation_tokens: Optional[list[int]] = field(default=[]) # for aLoRA
+
     def _validate_features(self) -> List[str]:
         """
         Check if there are any unsupported LoRA features.
@@ -96,6 +98,7 @@ class PEFTHelper:
         with open(lora_config_path) as f:
             config = json.load(f)
         config["vllm_max_position_embeddings"] = max_position_embeddings
+
         return cls.from_dict(config)
 
     def validate_legal(self, lora_config: LoRAConfig) -> None:
