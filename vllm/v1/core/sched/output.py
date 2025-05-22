@@ -70,14 +70,20 @@ class CachedRequestData:
         new_token_ids: list[int],
         new_block_ids: list[int],
     ) -> CachedRequestData:
+        if hasattr(request, "k_offset"):
+            offset = request.k_offset
+        else:
+            offset = 99999999999999999999999
         return cls(
             req_id=request.request_id,
             resumed_from_preemption=resumed_from_preemption,
             new_token_ids=new_token_ids,
             new_block_ids=new_block_ids,
             num_computed_tokens=request.num_computed_tokens,
-            k_offset=request.k_offset,
+            k_offset=offset,
         )
+        
+
 
 
 @dataclass

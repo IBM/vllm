@@ -40,7 +40,7 @@ class PEFTHelper:
     vllm_max_position_embeddings: Optional[int] = field(default=False)
     vllm_long_context_scaling_factor: Optional[float] = field(default=None)
 
-    invocation_tokens: Optional[list[int]] = field(default=[]) # for aLoRA
+    invocation_tokens: Optional[list[int]] = field(default_factory=list) # for aLoRA
 
     def _validate_features(self) -> List[str]:
         """

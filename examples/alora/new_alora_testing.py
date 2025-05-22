@@ -16,14 +16,15 @@ invocation_string = "<|start_of_role|>certainty<|end_of_role|>"
 
 USE_ALORA = True
 os.environ['VLLM_V1_USE_ACTIVATED_LORA'] = "1" if USE_ALORA else "0"
-
+os.environ['VLLM_USE_V1'] = "1"
+os.environ['VLLM_V1_USE_DEMO_LOGGING'] = "1"
 from huggingface_hub import snapshot_download
 
 # download your LoRA adapter to ~/.cache/huggingface/…
-alora_path = snapshot_download(repo_id=ALORA_NAME)
+#alora_path = snapshot_download(repo_id=ALORA_NAME, local_dir="~/tmpcert",local_dir_use_symlinks=False)
 
-
-
+alora_path = "/proj/dmfexp/statllm/users/kgreenewald/Thermometer/vllm-fork/vllm/~/tmpcert"
+print(alora_path)
 
 
 #######################################
@@ -38,13 +39,13 @@ llm = LLM(model=BASE_NAME,
           enable_prefix_caching=False, # enable APC
           max_lora_rank=64,
           enable_chunked_prefill=False,
-          tokenizer="no_chat_template_tokenizer",
+#          tokenizer="no_chat_template_tokenizer",
          )
 
 prompts = [
-    #"What is MIT?",
-    "<|start_of_role|>user<|end_of_role|>What is MIT?<|end_of_text|>\n",#<|start_of_role|>assistant<|end_of_role|>",# + invocation_string,
     "What is MIT?",
+    "<|start_of_role|>user<|end_of_role|>What is MIT?<|end_of_text|>\n",#<|start_of_role|>assistant<|end_of_role|>",# + invocation_string,
+    #"What is MIT?",
     # "The president of the United States is",
     # "The capital of France is",
     # "The future of AI is",
@@ -73,19 +74,19 @@ prompts_alora = [x + y + "<|end_of_text|>\n"+ invocation_string for x,y in zip(p
         #prompts[1] + generated_text[1] + "<|end_of_text|>\n" + invocation_string,
 #]
 sampling_params = SamplingParams(temperature=0, max_tokens=10)
-tok_prompts = []
-for prompt in prompts_alora:
-    input_tokens = tokenizer(prompt)['input_ids']
+#tok_prompts = []
+#for prompt in prompts_alora:
+#    input_tokens = tokenizer(prompt)['input_ids']
     #print(prompt)
     #print(input_tokens)
-    tok_prompts.append({"prompt_token_ids": input_tokens})
+#    tok_prompts.append({"prompt_token_ids": input_tokens})
 t0 = time.time()
-outputs = llm.generate(tok_prompts,
+outputs = llm.generate(prompts_alora,
                        sampling_params,
                        # need to increment global ID below if recomputing lora values without restarting kernel
                        lora_request = LoRARequest("UQ_adapter", 1, alora_path),
                        #tokenizer="no_chat_template_tokenizer",
-                       k_offsets = [3]*len(prompts_alora),#[3,3],
+#                       k_offsets = [3]*len(prompts_alora),#[3,3],
                       )
 t = time.time() -t0
 print(f"Time: {t}")

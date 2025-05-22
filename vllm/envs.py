@@ -111,7 +111,8 @@ if TYPE_CHECKING:
     VLLM_XGRAMMAR_CACHE_MB: int = 0
     VLLM_MSGPACK_ZERO_COPY_THRESHOLD: int = 256
     VLLM_V1_USE_ACTIVATED_LORA: bool = False
-
+    VLLM_V1_USE_DEMO_LOGGING: bool = True
+    
 def get_default_cache_root():
     return os.getenv(
         "XDG_CACHE_HOME",
@@ -731,7 +732,8 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Whether to enable activated LoRA
     "VLLM_V1_USE_ACTIVATED_LORA":
     lambda: os.environ.get("VLLM_V1_USE_ACTIVATED_LORA", "0") == "1",
-
+    "VLLM_V1_USE_DEMO_LOGGING":
+    lambda: os.environ.get("VLLM_V1_USE_DEMO_LOGGING", "0") == "1",
 }
 
 # end-env-vars-definition
