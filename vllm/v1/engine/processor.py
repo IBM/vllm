@@ -25,6 +25,9 @@ from vllm.v1.structured_output.backend_guidance import (
 from vllm.v1.structured_output.backend_xgrammar import (
     validate_xgrammar_grammar)
 
+import os
+import json
+from vllm.lora.utils import get_adapter_absolute_path
 
 class Processor:
 
@@ -306,19 +309,45 @@ class Processor:
                     orig_sorted_mm_inputs, sorted_mm_hashes)
             else:
                 sorted_mm_inputs = orig_sorted_mm_inputs
+        
+        # Tokenize aLoRA invocation sequence if applicable.
+        if lora_request is not None:
+            
+            # Load in adapter config file
+            lora_path = get_adapter_absolute_path(lora_request.lora_path)
+            lora_config_path = os.path.join(lora_path, "adapter_config.json")
+            with open(lora_config_path) as f:
+                config = json.load(f)
 
-        return decoder_inputs.get("prompt"), EngineCoreRequest(
-            request_id=request_id,
-            prompt_token_ids=decoder_inputs["prompt_token_ids"],
-            mm_inputs=sorted_mm_inputs,
-            mm_hashes=sorted_mm_hashes,
-            mm_placeholders=sorted_mm_positions,
-            sampling_params=sampling_params,
-            eos_token_id=eos_token_id,
-            arrival_time=arrival_time,
-            lora_request=lora_request,
-            cache_salt=decoder_inputs.get("cache_salt"),
-        )
+            if "invocation_sequence" in config: # check if aLoRA
+                invocation_tokens = self.processor.input_preprocessor._tokenize_prompt(config["invocation_sequence"])
+                return decoder_inputs.get("prompt"), EngineCoreRequest(
+                    request_id=request_id,
+                    prompt_token_ids=decoder_inputs["prompt_token_ids"],
+                    mm_inputs=sorted_mm_inputs,
+                    mm_hashes=sorted_mm_hashes,
+                    mm_placeholders=sorted_mm_positions,
+                    sampling_params=sampling_params,
+                    eos_token_id=eos_token_id,
+                    arrival_time=arrival_time,
+                    lora_request=lora_request,
+                    cache_salt=decoder_inputs.get("cache_salt"),
+                    invocation_tokens=invocation_tokens, # include aLoRA invocation tokens
+                )
+
+        else:
+            return decoder_inputs.get("prompt"), EngineCoreRequest(
+                request_id=request_id,
+                prompt_token_ids=decoder_inputs["prompt_token_ids"],
+                mm_inputs=sorted_mm_inputs,
+                mm_hashes=sorted_mm_hashes,
+                mm_placeholders=sorted_mm_positions,
+                sampling_params=sampling_params,
+                eos_token_id=eos_token_id,
+                arrival_time=arrival_time,
+                lora_request=lora_request,
+                cache_salt=decoder_inputs.get("cache_salt"),
+            )
 
     def _validate_model_inputs(self,
                                inputs: ProcessorInputs,

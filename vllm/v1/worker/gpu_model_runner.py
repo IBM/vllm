@@ -666,22 +666,20 @@ class GPUModelRunner(LoRAModelRunnerMixin):
         # Extract k_offsets for each new scheduled req
         for new_req_data in scheduler_output.scheduled_new_reqs:
             req_id = new_req_data.req_id
-            if new_req_data.lora_request is not None:
-                lora_id = new_req_data.lora_request.lora_int_id
-                lora_model = self.lora_manager._adapter_manager._registered_adapters[lora_id]
-                invocation_tokens = lora_model.invocation_tokens
+            if new_req_data.invocation_tokens is not None:
                 # invocation_tokens = [0,0,0,0]
-                num_invocation_tokens = len(invocation_tokens)
+                num_invocation_tokens = len(new_req_data.invocation_tokens)
                 # print(f"num_invok {num_invocation_tokens}")
                 # self.req_id_to_offset[req_id] = num_invocation_tokens - 1
-            # If invocation_sequence of lora corresponding to this sequence is present in the prompt,
-            # add k_offset field
-                if new_req_data.prompt_token_ids[-(num_invocation_tokens+1):-1] == invocation_tokens:
+
+                # If invocation_sequence of lora corresponding to this sequence is present in the prompt,
+                # add k_offset field
+                if new_req_data.prompt_token_ids[-(num_invocation_tokens+1):-1] == new_req_data.invocation_tokens:
                    self.req_id_to_offset[req_id] = num_invocation_tokens + 1
             else:
                 self.req_id_to_offset[req_id] = 99999999999999999999999999999999999
 
-            # Cache the new requests with the extracted offset
+            # Recache the new requests with the extracted offset
             existing_cached_request = self.requests[req_id]
             self.requests[req_id] = CachedRequestState(
                 req_id=req_id,

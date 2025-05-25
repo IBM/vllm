@@ -63,7 +63,8 @@ class EngineCoreRequest(
     # belong to, to cover a race condition where the request is sent before
     # a wave finished notification is received.
     current_wave: int = 0
-    k_offset: int = 0
+    # k_offset: int = 0
+    invocation_tokens: Optional[list[int]] = None
 
 
 class EngineCoreEventType(enum.IntEnum):
