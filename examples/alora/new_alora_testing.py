@@ -21,9 +21,9 @@ os.environ['VLLM_V1_USE_DEMO_LOGGING'] = "1"
 from huggingface_hub import snapshot_download
 
 # download your LoRA adapter to ~/.cache/huggingface/…
-#alora_path = snapshot_download(repo_id=ALORA_NAME, local_dir="~/tmpcert",local_dir_use_symlinks=False)
+alora_path = snapshot_download(repo_id=ALORA_NAME) #, local_dir="~/tmpcert",local_dir_use_symlinks=False)
 
-alora_path = "/proj/dmfexp/statllm/users/kgreenewald/Thermometer/vllm-fork/vllm/~/tmpcert"
+#alora_path = "/proj/dmfexp/statllm/users/kgreenewald/Thermometer/vllm-fork/vllm/~/tmpcert"
 print(alora_path)
 
 

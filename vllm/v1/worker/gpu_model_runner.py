@@ -340,24 +340,6 @@ class GPUModelRunner(LoRAModelRunnerMixin):
             removed_req_indices.append(req_index)
 
 
-        # Extract k_offsets for each new scheduled req
-        for new_req_data in scheduler_output.scheduled_new_reqs:
-            req_id = new_req_data.req_id
-            if new_req_data.lora_request is not None:
-                lora_id = new_req_data.lora_request.lora_int_id
-#                lora_model = self.lora_manager._adapter_manager._registered_adapters[lora_id]
- #               invocation_tokens = lora_model.invocation_tokens
-                invocation_tokens = [0,0,0,0]
-                num_invocation_tokens = len(invocation_tokens)
-                print(f"num_invok {num_invocation_tokens}")
-                self.req_id_to_offset[req_id] = num_invocation_tokens - 1
-            # If invocation_sequence of lora corresponding to this sequence is present in the prompt,
-            # add k_offset field
-                #if new_req_data.prompt_token_ids[-num_invocation_tokens-1:-1] == invocation_tokens:
-                #    self.req_id_to_offset[req_id] = num_invocation_tokens + 1
-            else:
-                self.req_id_to_offset[req_id] = 99999999999999999999999999999999999
-
         req_ids_to_add: list[str] = []
         # Add new requests to the cached states.
         for new_req_data in scheduler_output.scheduled_new_reqs:
@@ -380,7 +362,6 @@ class GPUModelRunner(LoRAModelRunnerMixin):
                 num_computed_tokens=new_req_data.num_computed_tokens,
                 output_token_ids=[],
                 lora_request=new_req_data.lora_request,
-                k_offset=self.req_id_to_offset[req_id], # updated
             )
 
             # Only relevant for models using M-RoPE (e.g, Qwen2-VL)
@@ -678,6 +659,51 @@ class GPUModelRunner(LoRAModelRunnerMixin):
             enable_lora = False
 
         return attn_metadata, logits_indices, spec_decode_metadata, enable_lora
+    
+    def _extract_offsets(self,
+                         scheduler_output: "SchedulerOutput",
+                         ) -> None:
+        # Extract k_offsets for each new scheduled req
+        for new_req_data in scheduler_output.scheduled_new_reqs:
+            req_id = new_req_data.req_id
+            
+            if new_req_data.invocation_tokens is not None: 
+                tokens = new_req_data.invocation_tokens
+                prompt_ids = new_req_data.prompt_token_ids
+                n = len(tokens)
+                self.req_id_to_offset[req_id] = -1
+                # only bother if there actually are invocation tokens
+                if n > 0 and len(prompt_ids) >= n:
+                    # scan backward for the last match (faster than full forward scan+max)
+                    for idx in range(len(prompt_ids) - n, -1, -1):
+                        if prompt_ids[idx : idx + n] == tokens:
+                            # offset = number of tokens from the start of that match to the end of the prompt
+                            self.req_id_to_offset[req_id] = len(prompt_ids) - idx - 1
+                            break
+                if self.req_id_to_offset[req_id] == -1:
+                    raise ValueError(
+                        f"Invocation sequence not found in prompt for request '{req_id}'. "
+                        "aLoRA models require the invocation tokens to be present in the input."
+                    )
+            else:
+                self.req_id_to_offset[req_id] = 99999999999999999999999999999999999
+            print(f"offset {self.req_id_to_offset[req_id]}")
+            # Recache the new requests with the extracted offset
+            existing_cached_request = self.requests[req_id]
+            self.requests[req_id] = CachedRequestState(
+                req_id=req_id,
+                prompt_token_ids=existing_cached_request.prompt_token_ids,
+                mm_inputs=existing_cached_request.mm_inputs,
+                mm_positions=existing_cached_request.mm_positions,
+                sampling_params=existing_cached_request.sampling_params,
+                generator=existing_cached_request.generator,
+                block_ids=existing_cached_request.block_ids,
+                num_computed_tokens=existing_cached_request.num_computed_tokens,
+                output_token_ids=[],
+                lora_request=existing_cached_request.lora_request,
+                k_offset=self.req_id_to_offset[req_id], # updated
+            )
+            
 
     def _compute_cascade_attn_prefix_len(
         self,
@@ -1079,6 +1105,10 @@ class GPUModelRunner(LoRAModelRunnerMixin):
         # Prepare the decoder inputs.
         attn_metadata, logits_indices, spec_decode_metadata, enable_lora = (
             self._prepare_inputs(scheduler_output))
+        
+        # Extract the aLoRA offsets if applicable.
+        self._extract_offsets(scheduler_output)
+
         num_scheduled_tokens = scheduler_output.total_num_scheduled_tokens
         if (self.use_cuda_graph
                 and num_scheduled_tokens <= self.cudagraph_batch_sizes[-1]):
