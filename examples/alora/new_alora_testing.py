@@ -39,16 +39,11 @@ llm = LLM(model=BASE_NAME,
           enable_prefix_caching=False, # enable APC
           max_lora_rank=64,
           enable_chunked_prefill=False,
-#          tokenizer="no_chat_template_tokenizer",
          )
 
 prompts = [
     "What is MIT?",
     "<|start_of_role|>user<|end_of_role|>What is MIT?<|end_of_text|>\n",#<|start_of_role|>assistant<|end_of_role|>",# + invocation_string,
-    #"What is MIT?",
-    # "The president of the United States is",
-    # "The capital of France is",
-    # "The future of AI is",
 ]
 #prompts_alora = [
 #        "<|start_of_role|>user<|end_of_role|>What is MIT?<|end_of_text|>\n<|start_of_role|>assistant<|end_of_role|>" +  + invocation_string,
