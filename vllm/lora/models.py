@@ -86,7 +86,6 @@ class LoRAModel(AdapterModel):
             > 0), f"a valid lora id should be greater than 0, got {self.id}"
         self.rank = rank
         self.loras: Dict[str, LoRALayerWeights] = loras
-        self.invocation_tokens: list[int] = invocation_tokens
 
     def clone(self, lora_model_id: int) -> "LoRAModel":
         """Return a copy of the object with different ids.
@@ -95,8 +94,7 @@ class LoRAModel(AdapterModel):
         return self.__class__(
             lora_model_id,
             rank=self.rank,
-            loras=self.loras.copy(),
-            invocation_tokens=self.invocation_tokens,
+            loras=self.loras.copy(), 
         )
 
     @property
