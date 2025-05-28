@@ -33,7 +33,7 @@ print(alora_path)
 
 llm = LLM(model=BASE_NAME,
           #dtype='float16', # float16 for v100i
-          enable_lora=False,
+          enable_lora=True,
           enforce_eager=True,
           dtype=torch.bfloat16,
           enable_prefix_caching=False, # enable APC
