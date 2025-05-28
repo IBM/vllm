@@ -666,19 +666,28 @@ class GPUModelRunner(LoRAModelRunnerMixin):
         # Extract k_offsets for each new scheduled req
         for new_req_data in scheduler_output.scheduled_new_reqs:
             req_id = new_req_data.req_id
-            if new_req_data.invocation_tokens is not None:
-                # invocation_tokens = [0,0,0,0]
-                num_invocation_tokens = len(new_req_data.invocation_tokens)
-                # print(f"num_invok {num_invocation_tokens}")
-                # self.req_id_to_offset[req_id] = num_invocation_tokens - 1
-
-                # If invocation_sequence of lora corresponding to this sequence is present in the prompt,
-                # add k_offset field
-                if new_req_data.prompt_token_ids[-(num_invocation_tokens+1):-1] == new_req_data.invocation_tokens:
-                   self.req_id_to_offset[req_id] = num_invocation_tokens + 1
+            
+            if new_req_data.invocation_tokens is not None: 
+                tokens = new_req_data.invocation_tokens
+                prompt_ids = new_req_data.prompt_token_ids
+                n = len(tokens)
+                self.req_id_to_offset[req_id] = -1
+                # only bother if there actually are invocation tokens
+                if n > 0 and len(prompt_ids) >= n:
+                    # scan backward for the last match (faster than full forward scan+max)
+                    for idx in range(len(prompt_ids) - n, -1, -1):
+                        if prompt_ids[idx : idx + n] == tokens:
+                            # offset = number of tokens from the start of that match to the end of the prompt
+                            self.req_id_to_offset[req_id] = len(prompt_ids) - idx - 1
+                            break
+                if self.req_id_to_offset[req_id] == -1:
+                    raise ValueError(
+                        f"Invocation sequence not found in prompt for request '{req_id}'. "
+                        "aLoRA models require the invocation tokens to be present in the input."
+                    )
             else:
                 self.req_id_to_offset[req_id] = 99999999999999999999999999999999999
-
+            print(f"offset {self.req_id_to_offset[req_id]}")
             # Recache the new requests with the extracted offset
             existing_cached_request = self.requests[req_id]
             self.requests[req_id] = CachedRequestState(

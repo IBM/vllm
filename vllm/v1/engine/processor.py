@@ -319,8 +319,8 @@ class Processor:
             with open(lora_config_path) as f:
                 config = json.load(f)
 
-            if "invocation_sequence" in config: # check if aLoRA
-                invocation_tokens = self.processor.input_preprocessor._tokenize_prompt(config["invocation_sequence"])
+            if "invocation_string" in config: # check if aLoRA
+                invocation_tokens = self.input_preprocessor._tokenize_prompt(config["invocation_string"],lora_request=lora_request,tokenization_kwargs=tokenization_kwargs)
                 return decoder_inputs.get("prompt"), EngineCoreRequest(
                     request_id=request_id,
                     prompt_token_ids=decoder_inputs["prompt_token_ids"],
