@@ -686,8 +686,8 @@ class GPUModelRunner(LoRAModelRunnerMixin):
                         "aLoRA models require the invocation tokens to be present in the input."
                     )
             else:
-                self.req_id_to_offset[req_id] = 99999999999999999999999999999999999
-            print(f"offset {self.req_id_to_offset[req_id]}")
+                self.req_id_to_offset[req_id] = None
+            
             # Recache the new requests with the extracted offset
             existing_cached_request = self.requests[req_id]
             self.requests[req_id] = CachedRequestState(
