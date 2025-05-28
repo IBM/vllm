@@ -485,7 +485,9 @@ class BaseLinearLayerWithLoRA(BaseLayerWithLoRA):
                 #x = output[0,4,3,2]
                 #print(output[query_start : query_end - k_offsets[i], :])
                 #print(base_prefix_outputs)
-                output[query_start : query_end - k_offsets[i], :] = base_prefix_outputs[i]
+                if k_offsets[i] is not None: # if None, then standard LoRA
+                    output[query_start : query_end - k_offsets[i], :] = base_prefix_outputs[i]
+                
                 query_start = query_start_locs[i + 1]
         
         return output
