@@ -1254,7 +1254,7 @@ class LLMEngine:
                     seq.append_token_id(sample.output_token, sample.logprobs,
                                         sample.output_embed)
 
-    def step(self, curStep = 0) -> List[Union[RequestOutput, PoolingRequestOutput]]:
+    def step(self) -> List[Union[RequestOutput, PoolingRequestOutput]]:
         """Performs one decoding iteration and returns newly generated results.
 
         :::{figure} https://i.imgur.com/sv2HssD.png
@@ -1378,16 +1378,7 @@ class LLMEngine:
             # will cause one virtual engine's microbatch to block the pipeline.
             last_sampled_token_ids = \
                 self._get_last_sampled_token_ids(virtual_engine)
-            
-            # ####### EXPERIMENT START #######
-            # for seq in seq_group_metadata_list:
-            #     # print(seq.seq_data[0].stage)
-            #     # print(seq.seq_data[0].get_prompt_len())
-            #     if changeLora and curStep > 1:
-            #         random_lora_path = "/u/lallison/.cache/huggingface/hub/random_lora_model"
-            #         seq.lora_request = LoRARequest("random_adapter", 1, random_lora_path)
-            #         print("Using v0, changed LoRA")
-            # ######## EXPERIMENT END ########
+          
 
             execute_model_req = ExecuteModelRequest(
                 seq_group_metadata_list=seq_group_metadata_list,
