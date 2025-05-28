@@ -75,7 +75,7 @@ class CachedRequestData:
         if hasattr(request, "k_offset"):
             offset = request.k_offset
         else:
-            offset = 99999999999999999999999
+            offset = None
         return cls(
             req_id=request.request_id,
             resumed_from_preemption=resumed_from_preemption,
