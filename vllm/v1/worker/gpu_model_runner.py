@@ -1177,7 +1177,7 @@ class GPUModelRunner(LoRAModelRunnerMixin):
             })
         
         # Fill in k_offsets based on the `scheduled_new_reqs` and `scheduled_cached_reqs` within the SchedulerOutput.
-        k_offsets = [600] * self.input_batch.num_reqs # Initial values shouldn't matter because they should be overwritten.
+        k_offsets = [1] * self.input_batch.num_reqs # Initial values shouldn't matter because they should be overwritten.
                                                       # Lora apply() within layers.py should not use the offset if sequence is generating,
                                                       # in which case seq_len should == 1
         for new_req_data in scheduler_output.scheduled_new_reqs:
