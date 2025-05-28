@@ -654,11 +654,8 @@ class GPUModelRunner(LoRAModelRunnerMixin):
         # Hot-Swap lora model
         if self.lora_config:
             self.set_active_loras(self.input_batch, num_scheduled_tokens)
-            enable_lora = True
-        else:
-            enable_lora = False
-
-        return attn_metadata, logits_indices, spec_decode_metadata, enable_lora
+            
+        return attn_metadata, logits_indices, spec_decode_metadata
     
     def _extract_offsets(self,
                          scheduler_output: "SchedulerOutput",
@@ -1103,7 +1100,7 @@ class GPUModelRunner(LoRAModelRunnerMixin):
             return EMPTY_MODEL_RUNNER_OUTPUT
 
         # Prepare the decoder inputs.
-        attn_metadata, logits_indices, spec_decode_metadata, enable_lora = (
+        attn_metadata, logits_indices, spec_decode_metadata = (
             self._prepare_inputs(scheduler_output))
         
         # Extract the aLoRA offsets if applicable.
@@ -1193,16 +1190,23 @@ class GPUModelRunner(LoRAModelRunnerMixin):
         with set_forward_context(attn_metadata,
                                  self.vllm_config,
                                  num_tokens=num_input_tokens):
-            output = self.model(
-                input_ids=input_ids,
-                positions=positions,
-                intermediate_tensors=intermediate_tensors,
-                inputs_embeds=inputs_embeds,
-                k_offsets=k_offsets, # added k_offsets for batch alora activation
-                query_start_locs=self.query_start_loc_np.tolist(), # added this to know where to start counting k_offsets from
-                num_reqs=self.input_batch.num_reqs,
-                enable_lora=enable_lora,
-            )
+            if self.lora_config:
+                output = self.model(
+                    input_ids=input_ids,
+                    positions=positions,
+                    intermediate_tensors=intermediate_tensors,
+                    inputs_embeds=inputs_embeds,
+                    k_offsets=k_offsets, # added k_offsets for batch alora activation
+                    query_start_locs=self.query_start_loc_np.tolist(), # added this to know where to start counting k_offsets from
+                    num_reqs=self.input_batch.num_reqs,
+                )
+            else:
+                output = self.model(
+                    input_ids=input_ids,
+                    positions=positions,
+                    intermediate_tensors=intermediate_tensors,
+                    inputs_embeds=inputs_embeds,
+                )
 
         if self.use_aux_hidden_state_outputs:
             hidden_states, aux_hidden_states = output
