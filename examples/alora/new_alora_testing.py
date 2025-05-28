@@ -23,16 +23,12 @@ from huggingface_hub import snapshot_download
 # download your LoRA adapter to ~/.cache/huggingface/…
 alora_path = snapshot_download(repo_id=ALORA_NAME) #, local_dir="~/tmpcert",local_dir_use_symlinks=False)
 
-#alora_path = "/proj/dmfexp/statllm/users/kgreenewald/Thermometer/vllm-fork/vllm/~/tmpcert"
-print(alora_path)
-
 
 #######################################
 
 
 
 llm = LLM(model=BASE_NAME,
-          #dtype='float16', # float16 for v100i
           enable_lora=True,
           enforce_eager=True,
           dtype=torch.bfloat16,
@@ -45,15 +41,11 @@ prompts = [
     "What is MIT?",
     "<|start_of_role|>user<|end_of_role|>What is MIT?<|end_of_text|>\n",#<|start_of_role|>assistant<|end_of_role|>",# + invocation_string,
 ]
-#prompts_alora = [
-#        "<|start_of_role|>user<|end_of_role|>What is MIT?<|end_of_text|>\n<|start_of_role|>assistant<|end_of_role|>" +  + invocation_string,
-#]
+
 sampling_params = SamplingParams(temperature=0, max_tokens=600)
 if 1:
     outputsBase = llm.generate(prompts,
                        sampling_params,
-  #                     # need to increment global ID below if recomputing lora values without restarting kernel
-   #                    k_offsets = [4],
                       )
     generated_text = []
     for output in outputsBase:
@@ -62,26 +54,13 @@ if 1:
         print(f"Prompt: {prompt!r}, Generated text: {generated_text[-1]!r}")
 else:
     generated_text = "1. MIT, or Massachusetts Institute of Technology, is a prestigious private research university located in Cambridge, Massachusetts, USA.\n2. It was founded in 1861 and is known for its strong programs in science, technology, engineering, and mathematics (STEM).\n3. MIT is often ranked as one of the world's top universities and is a member of the Ivy League.\n4. It is"
-prompts_alora = [x + y + "<|end_of_text|>\n"+ invocation_string for x,y in zip(prompts, generated_text)] #[
-        #"<|start_of_role|>user<|end_of_role|>What is MIT?<|end_of_text|>\n<|start_of_role|>assistant<|end_of_role|>" + generated_text[0] + "<|end_of_text|>\n" + invocation_string,
-        #"<|start_of_role|>user<|end_of_role|>What is MIT?<|end_of_text|>\n<|start_of_role|>assistant<|end_of_role|>" + generated_text[1] + "<|end_of_text|>\n" + invocation_string,
-        #prompts[0] + generated_text[0] + "<|end_of_text|>\n" + invocation_string,
-        #prompts[1] + generated_text[1] + "<|end_of_text|>\n" + invocation_string,
-#]
+prompts_alora = [x + y + "<|end_of_text|>\n"+ invocation_string for x,y in zip(prompts, generated_text)] 
 sampling_params = SamplingParams(temperature=0, max_tokens=10)
-#tok_prompts = []
-#for prompt in prompts_alora:
-#    input_tokens = tokenizer(prompt)['input_ids']
-    #print(prompt)
-    #print(input_tokens)
-#    tok_prompts.append({"prompt_token_ids": input_tokens})
+
 t0 = time.time()
 outputs = llm.generate(prompts_alora,
                        sampling_params,
-                       # need to increment global ID below if recomputing lora values without restarting kernel
                        lora_request = LoRARequest("UQ_adapter", 1, alora_path),
-                       #tokenizer="no_chat_template_tokenizer",
-#                       k_offsets = [3]*len(prompts_alora),#[3,3],
                       )
 t = time.time() -t0
 print(f"Time: {t}")
