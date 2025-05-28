@@ -459,7 +459,8 @@ class BaseLinearLayerWithLoRA(BaseLayerWithLoRA):
                 if flg == 0:
                     output_cp = copy.deepcopy(output)
                     flg = 1
-                base_prefix_outputs[i] = (output_cp[query_start : query_end - k_offsets[i], :])
+                if k_offsets[i] is not None:
+                    base_prefix_outputs[i] = (output_cp[query_start : query_end - k_offsets[i], :])
                 query_start = query_start_locs[i + 1]
        
         
