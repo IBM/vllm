@@ -14,7 +14,7 @@ client = OpenAI(
 )
 
 BASE_NAME = "ibm-granite/granite-3.2-8b-instruct"
-ALORA_NAME = "ibm-granite/granite-3.2-8b-alora-uncertainty"
+ALORA_NAME = "new_alora" #"ibm-granite/granite-3.2-8b-alora-uncertainty"
 invocation_string = "<|start_of_role|>certainty<|end_of_role|>"
 
 ###################################################################
@@ -29,10 +29,13 @@ outputs_base = client.completions.create(model=BASE_NAME,
                                          prompt=prompts,  
                                          temperature=0, 
                                          max_tokens=600)
+
+choices = outputs_base.choices
 generated_text = []
-for output in outputs_base:
-    prompt = output.prompt
-    generated_text += [output.choices[0].text]
+for i in range(len(prompts)):
+    prompt = prompts[i]
+
+    generated_text += [outputs_base.choices[i].text]
     print(f"Prompt: {prompt!r}, Generated text: {generated_text[-1]!r}")
 
 prompts_alora = [x + y + "<|end_of_text|>\n"+ invocation_string for x,y in zip(prompts, generated_text)] 
@@ -45,9 +48,9 @@ alora_outputs = client.completions.create(model=ALORA_NAME,
                                           max_tokens=10)
 t = time.time() -t0
 print(f"Time: {t}")
-for output in alora_outputs:
-    prompt = output.prompt
-    generated_text = output.choices[0].text
+for i in range(len(prompts_alora)):
+    prompt = prompts_alora[i]
+    generated_text = alora_outputs.choices[i].text
     print(f"Prompt: {prompt!r}, Generated text: {generated_text!r}")
 
 
