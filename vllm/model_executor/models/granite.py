@@ -472,10 +472,7 @@ class GraniteForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         positions: torch.Tensor,
         intermediate_tensors: Optional[IntermediateTensors] = None,
         inputs_embeds: Optional[torch.Tensor] = None,
-        k_offsets: Optional[list[int]] = None,
-        query_start_locs: Optional[list[int]] = None,
-        num_reqs: Optional[int] = 1,
-        enable_lora: Optional[bool] = False,
+        **kwargs,
     ) -> Union[torch.Tensor, IntermediateTensors]:
         
         args = {
@@ -486,10 +483,8 @@ class GraniteForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         }
         # if lora enabled, pass the 3 additional fields into the model
         # TODO: for regular lora, k_offset[i] should = 0
-        if enable_lora:
-            args['k_offsets'] = k_offsets
-            args['query_start_locs'] = query_start_locs
-            args['num_reqs'] = num_reqs
+        for name in kwargs:
+            args[name] = kwargs[name]
        # print(enable_lora)
        # print(f"inpu_ids {input_ids}")
        # print(f"pos {positions}")
