@@ -33,6 +33,8 @@ from vllm.model_executor.layers.vocab_parallel_embedding import (
     VocabParallelEmbedding)
 from vllm.platforms import current_platform
 
+from vllm.forward_context import ForwardContext, get_forward_context
+
 import copy
 
 if TYPE_CHECKING:
@@ -402,15 +404,8 @@ class BaseLinearLayerWithLoRA(BaseLayerWithLoRA):
     def apply(self,
               x: torch.Tensor,
               bias: Optional[torch.Tensor] = None,
-            #   k_offsets: Optional[list[int]] = None,
-            #   query_start_locs: Optional[list[int]] = None,
-            #   num_reqs: Optional[int] = 1,
-            **kwargs,
         ) -> torch.Tensor:
-        
-        k_offsets: Optional[list[int]] = kwargs['k_offsets'] if 'k_offsets' in kwargs else None
-        query_start_locs: Optional[list[int]] = kwargs['query_start_locs'] if 'query_start_locs' in kwargs else None
-        num_reqs: Optional[int] = kwargs['num_reqs'] if 'num_reqs' in kwargs else 1
+
         #print("inside layer")
         #print(f"query {query_start_locs}")
         output = self.base_layer.quant_method.apply(self.base_layer, x, bias)
@@ -433,6 +428,13 @@ class BaseLinearLayerWithLoRA(BaseLayerWithLoRA):
         flg = 0
            
         # Step 1: save first (len-k) tokens from base model output
+
+        # Extract aLoRA batch metadata from forward context
+        alora_metadata = get_forward_context().alora_metadata
+        k_offsets: Optional[list[int]] = alora_metadata.k_offsets
+        query_start_locs: Optional[list[int]] = alora_metadata.query_start_locs
+        num_reqs: Optional[int] = alora_metadata.num_reqs
+
         base_prefix_outputs = [None] * num_reqs
         #x = output[0,4,2,3]
         # `output` stores all outputs across all parallel queries concatenated together,
@@ -440,7 +442,7 @@ class BaseLinearLayerWithLoRA(BaseLayerWithLoRA):
         if query_start_locs is not None:
             query_start = 0
             query_end = 0
-      #      x = output[0,4,2,3]
+    #      x = output[0,4,2,3]
             for i in range(num_reqs):
                 query_end = query_start_locs[i + 1]
                 #print("inside layer")
@@ -452,10 +454,10 @@ class BaseLinearLayerWithLoRA(BaseLayerWithLoRA):
                 if seq_len == 1 or k_offsets is None: # check if not prefilling
                     query_start = query_start_locs[i + 1]
                     continue
-       #         print(query_start)
+    #         print(query_start)
         #        print(query_end)
-         #       print(output.shape[0])
-          #      print(f"k offsets {k_offsets}")
+        #       print(output.shape[0])
+        #      print(f"k offsets {k_offsets}")
                 if flg == 0:
                     output_cp = copy.deepcopy(output)
                     flg = 1
@@ -470,8 +472,7 @@ class BaseLinearLayerWithLoRA(BaseLayerWithLoRA):
                                             self.lora_bias_stacked, 1.0,
                                             self.output_slices)
         
-        # Step 3: for each query, piece together the base_prefix_output to the corresponding output[-k:] to get new modified output
-        # print("Piecing together base output with last k from lora")
+        # Step 3: for each query called with aLoRA, piece together the base_prefix_output to the corresponding output[-k:] to get new modified output
         if query_start_locs is not None:
             query_start = 0
             query_end = 0

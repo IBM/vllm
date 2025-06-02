@@ -5,7 +5,7 @@
 # Specify base model (and optionally loras) to load in when starting the server.
 vllm serve ibm-granite/granite-3.2-8b-instruct \
     --enable-lora \
-    --enfore-eager \
+    --enforce-eager \
     --lora-modules '{"name": "new_alora", "path": "/path/to/alora", "base_model_name": "ibm-granite/granite-3.2-8b-instruct"}' \
     --dtype bfloat16 \
     --max-lora-rank 64 \

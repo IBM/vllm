@@ -4,7 +4,7 @@ import time
 from collections import defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union, List
 
 import torch
 import torch.distributed as dist
@@ -33,6 +33,12 @@ batchsize_forward_time: defaultdict = defaultdict(list)
 class DPMetadata:
     cu_tokens_across_dp_cpu: torch.Tensor
 
+@dataclass
+class ALoRAMetadata:
+    k_offsets: torch.Tensor
+    query_start_locs: List[int]
+    num_reqs: int
+
 
 @dataclass
 class ForwardContext:
@@ -49,6 +55,7 @@ class ForwardContext:
     virtual_engine: int  # set dynamically for each forward pass
     # set dynamically for each forward pass
     dp_metadata: Optional[DPMetadata] = None
+    alora_metadata: ALoRAMetadata
 
 
 _forward_context: Optional[ForwardContext] = None
@@ -66,7 +73,8 @@ def get_forward_context() -> ForwardContext:
 def set_forward_context(attn_metadata: Any,
                         vllm_config: VllmConfig,
                         virtual_engine: int = 0,
-                        num_tokens: int = 0):
+                        num_tokens: int = 0,
+                        alora_metadata: Optional[ALoRAMetadata] = None):
     """A context manager that stores the current forward context,
     can be attention metadata, etc.
     Here we can inject common logic for every model forward pass.
@@ -104,7 +112,9 @@ def set_forward_context(attn_metadata: Any,
         static_forward_context,
         virtual_engine=virtual_engine,
         attn_metadata=attn_metadata,
-        dp_metadata=dp_metadata)
+        dp_metadata=dp_metadata,
+        alora_metadata=alora_metadata,
+        )
 
     # KVConnector: trigger (possibly async) load before forward.
     # Each attn layer will block until the reading is complete.

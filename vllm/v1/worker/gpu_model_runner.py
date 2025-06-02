@@ -17,7 +17,7 @@ from vllm.config import (CompilationLevel, VllmConfig,
 from vllm.distributed.kv_transfer import (get_kv_transfer_group,
                                           has_kv_transfer_group)
 from vllm.distributed.parallel_state import get_pp_group, graph_capture
-from vllm.forward_context import set_forward_context
+from vllm.forward_context import set_forward_context, ALoRAMetadata
 from vllm.logger import init_logger
 from vllm.model_executor.layers.rotary_embedding import MRotaryEmbedding
 from vllm.model_executor.model_loader import get_model
@@ -657,10 +657,13 @@ class GPUModelRunner(LoRAModelRunnerMixin):
             
         return attn_metadata, logits_indices, spec_decode_metadata
     
+
     def _extract_offsets(self,
                          scheduler_output: "SchedulerOutput",
-                         ) -> None:
-        # Extract k_offsets for each new scheduled req
+                         ) -> ALoRAMetadata:
+        """
+        Extract k_offsets for each new scheduled req that is called with aLoRA.
+        """
         for new_req_data in scheduler_output.scheduled_new_reqs:
             req_id = new_req_data.req_id
             
@@ -700,6 +703,23 @@ class GPUModelRunner(LoRAModelRunnerMixin):
                 lora_request=existing_cached_request.lora_request,
                 k_offset=self.req_id_to_offset[req_id], # updated
             )
+        
+        # Fill in k_offsets based on the `scheduled_new_reqs` and `scheduled_cached_reqs` within the SchedulerOutput.
+        k_offsets = [None] * self.input_batch.num_reqs # List initialization, overwritten below.
+        for new_req_data in scheduler_output.scheduled_new_reqs:
+            req_id = new_req_data.req_id
+            req_index = self.input_batch.req_id_to_index[req_id]
+            k_offsets[req_index] = self.requests[req_id].k_offset
+
+        for cached_req_data in scheduler_output.scheduled_cached_reqs:
+            req_id = cached_req_data.req_id
+            req_index = self.input_batch.req_id_to_index[req_id]
+            k_offsets[req_index] = self.requests[req_id].k_offset
+        
+        alora_metadata = ALoRAMetadata(k_offsets=k_offsets,
+                                       query_start_locs=self.query_start_loc_np.tolist(),
+                                       num_reqs=self.input_batch.num_reqs,)
+        return alora_metadata
             
 
     def _compute_cascade_attn_prefix_len(
@@ -1104,7 +1124,7 @@ class GPUModelRunner(LoRAModelRunnerMixin):
             self._prepare_inputs(scheduler_output))
         
         # Extract the aLoRA offsets if applicable.
-        self._extract_offsets(scheduler_output)
+        alora_metadata = self._extract_offsets(scheduler_output)
 
         num_scheduled_tokens = scheduler_output.total_num_scheduled_tokens
         if (self.use_cuda_graph
@@ -1172,41 +1192,19 @@ class GPUModelRunner(LoRAModelRunnerMixin):
                 k: v[:num_input_tokens]
                 for k, v in self.intermediate_tensors.items()
             })
-        
-        # Fill in k_offsets based on the `scheduled_new_reqs` and `scheduled_cached_reqs` within the SchedulerOutput.
-        k_offsets = [None] * self.input_batch.num_reqs # List initialization, overwritted below.
-        for new_req_data in scheduler_output.scheduled_new_reqs:
-            req_id = new_req_data.req_id
-            req_index = self.input_batch.req_id_to_index[req_id]
-            k_offsets[req_index] = self.requests[req_id].k_offset
-
-        for cached_req_data in scheduler_output.scheduled_cached_reqs:
-            req_id = cached_req_data.req_id
-            req_index = self.input_batch.req_id_to_index[req_id]
-            k_offsets[req_index] = self.requests[req_id].k_offset
 
         # Run the decoder.
         # Use persistent buffers for CUDA graphs.
         with set_forward_context(attn_metadata,
                                  self.vllm_config,
-                                 num_tokens=num_input_tokens):
-            if self.lora_config:
-                output = self.model(
-                    input_ids=input_ids,
-                    positions=positions,
-                    intermediate_tensors=intermediate_tensors,
-                    inputs_embeds=inputs_embeds,
-                    k_offsets=k_offsets, # added k_offsets for batch alora activation
-                    query_start_locs=self.query_start_loc_np.tolist(), # added this to know where to start counting k_offsets from
-                    num_reqs=self.input_batch.num_reqs,
-                )
-            else:
-                output = self.model(
-                    input_ids=input_ids,
-                    positions=positions,
-                    intermediate_tensors=intermediate_tensors,
-                    inputs_embeds=inputs_embeds,
-                )
+                                 num_tokens=num_input_tokens,
+                                 alora_metadata=alora_metadata):
+            output = self.model(
+                input_ids=input_ids,
+                positions=positions,
+                intermediate_tensors=intermediate_tensors,
+                inputs_embeds=inputs_embeds,
+            )
 
         if self.use_aux_hidden_state_outputs:
             hidden_states, aux_hidden_states = output
