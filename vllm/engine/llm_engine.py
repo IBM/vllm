@@ -683,7 +683,6 @@ class LLMEngine:
             priority: int = 0,
             *,
             inputs: Optional[PromptType] = None,  # DEPRECATED
-            k_offset: Optional[int] = 0,
     ) -> None:
         """Add a request to the engine's request pool.
 
@@ -1378,7 +1377,6 @@ class LLMEngine:
             # will cause one virtual engine's microbatch to block the pipeline.
             last_sampled_token_ids = \
                 self._get_last_sampled_token_ids(virtual_engine)
-          
 
             execute_model_req = ExecuteModelRequest(
                 seq_group_metadata_list=seq_group_metadata_list,
@@ -1397,12 +1395,9 @@ class LLMEngine:
                     virtual_engine]
 
             try:
-                print(f"Current steps: {curStep}")
-                
-                outputs = self.model_executor.execute_model(
-                    execute_model_req=execute_model_req) # returns list of SamplerOutputs
-                
+                outputs = self.model_executor.execute_model(execute_model_req=execute_model_req)
                 self._skip_scheduling_next_step = False
+
             except InputProcessingError as e:
                 # The input for this request cannot be processed, so we must
                 # abort it. If there are remaining requests in the batch that
@@ -1478,7 +1473,6 @@ class LLMEngine:
             # Drain async postprocessor (if exists)
             if len(ctx.output_queue) > 0:
                 self._process_model_outputs(ctx=ctx)
-                print("processing outputs")
             assert len(ctx.output_queue) == 0
 
             # Stop the execute model loop in parallel workers until there are
@@ -1488,9 +1482,6 @@ class LLMEngine:
             # queued control plane messages, such as add/remove lora adapters.
             logger.debug("Stopping remote worker execution loop.")
             self.model_executor.stop_remote_worker_execution_loop()
-
-        if len(ctx.request_outputs) > 0:
-            print(f"step output: {ctx.request_outputs[0].outputs[0].text}")
         
         return ctx.request_outputs
 

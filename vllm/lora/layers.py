@@ -535,10 +535,7 @@ class ReplicatedLinearWithLoRA(BaseLinearLayerWithLoRA):
                 if not self.base_layer.skip_bias_add else None)
         
         # Matrix multiply.
-        output, seq_len = self.apply(input_, 
-                                     bias,
-                                     **kwargs,
-                                     )
+        output, seq_len = self.apply(input_, bias)
 
         output_bias = (self.base_layer.bias
                        if self.base_layer.skip_bias_add else None)
@@ -640,10 +637,7 @@ class ColumnParallelLinearWithLoRA(BaseLinearLayerWithLoRA):
                 if not self.base_layer.skip_bias_add else None)
         
         # Matrix multiply.
-        output_parallel = self.apply(input_, 
-                                     bias, 
-                                     **kwargs,
-                                     )
+        output_parallel = self.apply(input_, bias)
         if self.base_layer.gather_output:
             # All-gather across the partitions.
             output = tensor_model_parallel_all_gather(output_parallel)
@@ -1004,9 +998,7 @@ class RowParallelLinearWithLoRA(BaseLinearLayerWithLoRA):
             input_parallel = splitted_input[self.tp_rank].contiguous()
         
         # Matrix multiply.
-        output_parallel = self.apply(input_parallel,
-                                     **kwargs,
-                                     )
+        output_parallel = self.apply(input_parallel)
         if self.base_layer.reduce_results and self.base_layer.tp_size > 1:
             output_ = tensor_model_parallel_all_reduce(output_parallel)
         else:

@@ -209,9 +209,7 @@ class LLMEngine:
             # Add the request to EngineCore.
             self.engine_core.add_request(child_request)
 
-    def step(self, 
-             curStep = 0, 
-             ) -> list[RequestOutput]:
+    def step(self) -> list[RequestOutput]:
 
         if self.should_execute_dummy_batch:
             self.should_execute_dummy_batch = False

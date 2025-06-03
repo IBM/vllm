@@ -662,7 +662,7 @@ class GPUModelRunner(LoRAModelRunnerMixin):
                          scheduler_output: "SchedulerOutput",
                          ) -> ALoRAMetadata:
         """
-        Extract k_offsets for each new scheduled req that is called with aLoRA.
+        Extract k_offsets for each new scheduled req that is called with aLoRA. Prepare aLoRA metadata for model execution.
         """
         for new_req_data in scheduler_output.scheduled_new_reqs:
             req_id = new_req_data.req_id

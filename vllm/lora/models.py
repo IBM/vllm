@@ -67,7 +67,6 @@ class LoRAModel(AdapterModel):
         rank: int,
         loras: Dict[str, LoRALayerWeights],
         scaling_factor: Optional[float] = None,
-        invocation_tokens: Optional[list[int]] = [],
     ) -> None:
         """
         Args:
@@ -94,7 +93,7 @@ class LoRAModel(AdapterModel):
         return self.__class__(
             lora_model_id,
             rank=self.rank,
-            loras=self.loras.copy(), 
+            loras=self.loras.copy(),
         )
 
     @property
@@ -183,7 +182,7 @@ class LoRAModel(AdapterModel):
                    peft_helper.r,
                    loras,
                    scaling_factor=peft_helper.vllm_long_context_scaling_factor,
-                   invocation_tokens=peft_helper.invocation_tokens) # added this for aLoRA
+        )
 
     @classmethod
     def from_local_checkpoint(
