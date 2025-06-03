@@ -55,7 +55,7 @@ class ForwardContext:
     virtual_engine: int  # set dynamically for each forward pass
     # set dynamically for each forward pass
     dp_metadata: Optional[DPMetadata] = None
-    alora_metadata: ALoRAMetadata
+    alora_metadata: Optional[ALoRAMetadata] = None
 
 
 _forward_context: Optional[ForwardContext] = None
