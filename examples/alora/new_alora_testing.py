@@ -23,14 +23,14 @@ from huggingface_hub import snapshot_download
 # download your LoRA adapter to ~/.cache/huggingface/…
 alora_path = snapshot_download(repo_id=ALORA_NAME) #, local_dir="~/tmpcert",local_dir_use_symlinks=False)
 
-
+print(alora_path)
 #######################################
 
 
 
 llm = LLM(model=BASE_NAME,
           enable_lora=True,
-          enforce_eager=True,
+          enforce_eager=False,
           dtype=torch.bfloat16,
           enable_prefix_caching=False, # enable APC
           max_lora_rank=64,
