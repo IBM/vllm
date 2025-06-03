@@ -422,7 +422,7 @@ class BaseLinearLayerWithLoRA(BaseLayerWithLoRA):
         alora_metadata = get_forward_context().alora_metadata
         if alora_metadata is not None:
             USE_ALORA = True
-            k_offsets = alora_metadata.k_offsets
+            k_offsets = alora_metadata.k_offsets 
             query_start_locs = alora_metadata.query_start_locs
             num_reqs = alora_metadata.num_reqs
         else:
