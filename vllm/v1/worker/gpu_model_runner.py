@@ -686,7 +686,7 @@ class GPUModelRunner(LoRAModelRunnerMixin):
                         "aLoRA models require the invocation tokens to be present in the input."
                     )
             else:
-                self.req_id_to_offset[req_id] = None
+                self.req_id_to_offset[req_id] = 3#None
             
             # Recache the new requests with the extracted offset
             existing_cached_request = self.requests[req_id]
@@ -1125,6 +1125,7 @@ class GPUModelRunner(LoRAModelRunnerMixin):
         
         # Extract the aLoRA offsets if applicable.
         alora_metadata = self._extract_offsets(scheduler_output)
+        
         num_scheduled_tokens = scheduler_output.total_num_scheduled_tokens
         if (self.use_cuda_graph
                 and num_scheduled_tokens <= self.cudagraph_batch_sizes[-1]):

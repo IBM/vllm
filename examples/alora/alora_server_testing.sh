@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # More documentation: https://docs.vllm.ai/en/v0.8.3/serving/openai_compatible_server.html#vllm-serve
-
+export VLLM_V1_USE_ACTIVATED_LORA="1"
 # Specify base model (and optionally loras) to load in when starting the server.
 vllm serve ibm-granite/granite-3.2-8b-instruct \
     --enable-lora \

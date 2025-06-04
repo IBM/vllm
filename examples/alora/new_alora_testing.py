@@ -30,7 +30,7 @@ print(alora_path)
 
 llm = LLM(model=BASE_NAME,
           enable_lora=True,
-          enforce_eager=True,
+          enforce_eager=False,
           dtype=torch.bfloat16,
           enable_prefix_caching=False, # enable APC
           max_lora_rank=64, 

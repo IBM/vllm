@@ -425,52 +425,82 @@ class BaseLinearLayerWithLoRA(BaseLayerWithLoRA):
             k_offsets = alora_metadata.k_offsets 
             query_start_locs = alora_metadata.query_start_locs
             num_reqs = alora_metadata.num_reqs
-            if query_start_locs is not None:
-                USE_ALORA = True
-                
+            #if query_start_locs is not None:
+            USE_ALORA = True
 
-        # `output` stores all outputs across all parallel queries concatenated together,
-        # so we need to save the first (len-k) tokens of each query
-        if USE_ALORA: #query_start_locs is not None:
-            base_prefix_outputs = [None] * num_reqs
-    
+        if USE_ALORA:
+            # Build an index tensor of all row‐indices to keep
+            prefix_indices = []
             for i in range(num_reqs):
-                query_start = query_start_locs[i]
-                query_end = query_start_locs[i + 1]
-                
-                seq_len = query_end - query_start
-                if seq_len == 1 or k_offsets is None: # check if not prefilling 
-                    continue
-                if flg == 0:
-                    output_cp = copy.deepcopy(output)
-                    flg = 1
-                if k_offsets[i] is not None:
-                    base_prefix_outputs[i] = output_cp[query_start : query_end - k_offsets[i], :]
-       
-        # Step 2: apply lora
+                start = query_start_locs[i]
+                end = query_start_locs[i+1]
+                k = k_offsets[i] if (k_offsets[i] is not None) else end - start
+                if (end - start) > 1 and (k is not None):
+                    # keep rows [start : end - k]
+                    prefix_indices.extend(list(range(start, end - k)))
+            prefix_indices = torch.tensor(prefix_indices, device=output.device)
+
+            # Now prefix_out is a contiguous Tensor:
+            prefix_out = output.index_select(0, prefix_indices)
+
+        # 2) LoRA step stays the same:
         self.punica_wrapper.add_lora_linear(output, x, self.lora_a_stacked,
                                             self.lora_b_stacked,
                                             self.lora_bias_stacked, 1.0,
                                             self.output_slices)
-        
-        # Step 3: for each query called with aLoRA, piece together the base_prefix_output to the corresponding output[-k:] to get new modified output
-        if USE_ALORA: #query_start_locs is not None:
-            for i in range(num_reqs):
-                query_start = query_start_locs[i]
-                query_end = query_start_locs[i + 1]
 
-                seq_len = query_end - query_start
-                
-                if seq_len == 1 or k_offsets is None: # check if not prefilling
-                    continue
-                if k_offsets[i] is not None: # if None, then standard LoRA
-                    #print(f"{base_prefix_outputs[i]}")
-                    #print(f"{output[query_start : query_end - k_offsets[i], :]}")
+        # 3) Scatter those prefix rows back to ‘output’:
+        if USE_ALORA:
+            # compute where in the final “output” these prefix rows go,
+            # then do one scatter_ call:
+            new_positions = prefix_indices  # same indices as before
+            output.scatter_(0, 
+                            new_positions.unsqueeze(-1).expand(-1, output.size(-1)), 
+                            prefix_out)
+
+        # `output` stores all outputs across all parallel queries concatenated together,
+        # so we need to save the first (len-k) tokens of each query
+        if 0:
+            if USE_ALORA: #query_start_locs is not None:
+                base_prefix_outputs = [None] * num_reqs
+        
+                for i in range(num_reqs):
+                    query_start = query_start_locs[i]
+                    query_end = query_start_locs[i + 1]
                     
-                    output[query_start : query_end - k_offsets[i], :] = base_prefix_outputs[i]
-        #if USE_ALORA and seq_len > 1:
-        #    print(f"{base_prefix_outputs[num_reqs-1]}")
-        #    print(f"{output[query_start : query_end - 3, :]}")
+                    seq_len = query_end - query_start
+                    if seq_len == 1 or k_offsets is None: # check if not prefilling 
+                        continue
+                    if flg == 0:
+                        output_cp = output.clone()#copy.deepcopy(output)
+                        flg = 1
+                    if k_offsets[i] is not None:
+                        base_prefix_outputs[i] = output_cp[query_start : query_end - k_offsets[i], :]
+           
+            # Step 2: apply lora
+            self.punica_wrapper.add_lora_linear(output, x, self.lora_a_stacked,
+                                                self.lora_b_stacked,
+                                                self.lora_bias_stacked, 1.0,
+                                                self.output_slices)
+            
+            # Step 3: for each query called with aLoRA, piece together the base_prefix_output to the corresponding output[-k:] to get new modified output
+            if USE_ALORA: #query_start_locs is not None:
+                for i in range(num_reqs):
+                    query_start = query_start_locs[i]
+                    query_end = query_start_locs[i + 1]
+
+                    seq_len = query_end - query_start
+                    
+                    if seq_len == 1 or k_offsets is None: # check if not prefilling
+                        continue
+                    if k_offsets[i] is not None: # if None, then standard LoRA
+                        #print(f"{base_prefix_outputs[i]}")
+                        #print(f"{output[query_start : query_end - k_offsets[i], :]}")
+                        
+                        output[query_start : query_end - k_offsets[i], :] = base_prefix_outputs[i]
+            #if USE_ALORA and seq_len > 1:
+            #    print(f"{base_prefix_outputs[num_reqs-1]}")
+            #    print(f"{output[query_start : query_end - 3, :]}")
         return output
 
     @property
