@@ -1596,9 +1596,19 @@ class GPUModelRunner(LoRAModelRunnerMixin):
                     for k, v in self.intermediate_tensors.items()
                 })
 
+            # Prepare dummy ALoRAMetadata
+            dummy_k_offsets = [None] * num_reqs
+            dummy_cu_num_tokens = np.cumsum(num_scheduled_tokens)
+            dummy_query_start_loc = [0] * (max_num_reqs + 1)
+            dummy_query_start_loc[0] = 0
+            dummy_query_start_loc[1:num_reqs + 1] = dummy_cu_num_tokens
+            dummy_alora_metadata = ALoRAMetadata(k_offsets=dummy_k_offsets,
+                                                 query_start_locs=dummy_query_start_loc,
+                                                 num_reqs=num_reqs,)
             with set_forward_context(None,
                                      self.vllm_config,
-                                     num_tokens=num_tokens):
+                                     num_tokens=num_tokens,
+                                     alora_metadata=dummy_alora_metadata):
                 outputs = model(
                     input_ids=input_ids,
                     positions=positions,
