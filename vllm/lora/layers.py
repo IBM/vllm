@@ -416,41 +416,37 @@ class BaseLinearLayerWithLoRA(BaseLayerWithLoRA):
             output = output.flatten(0, 1)
             x = x.flatten(0, 1)
         
-        output_cp = output 
+       # output_cp = output 
         flg = 0 # For now, this flag exists to make sure we only use deepcopy once and only if needed. Probably possible to make cleaner 
         # Extract aLoRA batch metadata from forward context
         alora_metadata = get_forward_context().alora_metadata
-        if alora_metadata is not None:
-            USE_ALORA = True
+        USE_ALORA = False
+        if alora_metadata is not None:           
             k_offsets = alora_metadata.k_offsets 
             query_start_locs = alora_metadata.query_start_locs
             num_reqs = alora_metadata.num_reqs
-        else:
-            USE_ALORA = False
-            
+            if query_start_locs is not None:
+                USE_ALORA = True
+                
 
         # `output` stores all outputs across all parallel queries concatenated together,
         # so we need to save the first (len-k) tokens of each query
         if USE_ALORA: #query_start_locs is not None:
             base_prefix_outputs = [None] * num_reqs
-            query_start = 0
-            query_end = 0
     
             for i in range(num_reqs):
+                query_start = query_start_locs[i]
                 query_end = query_start_locs[i + 1]
                 
                 seq_len = query_end - query_start
-                if seq_len == 1 or k_offsets is None: # check if not prefilling
-                    query_start = query_start_locs[i + 1]
+                if seq_len == 1 or k_offsets is None: # check if not prefilling 
                     continue
                 if flg == 0:
                     output_cp = copy.deepcopy(output)
                     flg = 1
                 if k_offsets[i] is not None:
-                    base_prefix_outputs[i] = (output_cp[query_start : query_end - k_offsets[i], :])
-                query_start = query_start_locs[i + 1]
+                    base_prefix_outputs[i] = output_cp[query_start : query_end - k_offsets[i], :]
        
-        
         # Step 2: apply lora
         self.punica_wrapper.add_lora_linear(output, x, self.lora_a_stacked,
                                             self.lora_b_stacked,
@@ -459,21 +455,22 @@ class BaseLinearLayerWithLoRA(BaseLayerWithLoRA):
         
         # Step 3: for each query called with aLoRA, piece together the base_prefix_output to the corresponding output[-k:] to get new modified output
         if USE_ALORA: #query_start_locs is not None:
-            query_start = 0
-            query_end = 0
             for i in range(num_reqs):
+                query_start = query_start_locs[i]
                 query_end = query_start_locs[i + 1]
 
                 seq_len = query_end - query_start
                 
                 if seq_len == 1 or k_offsets is None: # check if not prefilling
-                    query_start = query_start_locs[i + 1]
                     continue
                 if k_offsets[i] is not None: # if None, then standard LoRA
+                    #print(f"{base_prefix_outputs[i]}")
+                    #print(f"{output[query_start : query_end - k_offsets[i], :]}")
+                    
                     output[query_start : query_end - k_offsets[i], :] = base_prefix_outputs[i]
-                
-                query_start = query_start_locs[i + 1]
-        
+        #if USE_ALORA and seq_len > 1:
+        #    print(f"{base_prefix_outputs[num_reqs-1]}")
+        #    print(f"{output[query_start : query_end - 3, :]}")
         return output
 
     @property

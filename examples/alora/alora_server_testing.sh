@@ -8,7 +8,7 @@ vllm serve ibm-granite/granite-3.2-8b-instruct \
     --lora-modules '{"name": "new_alora", "path": "/proj/dmfexp/statllm/users/kgreenewald/.cache/huggingface/models/hub/models--ibm-granite--granite-3.2-8b-alora-uncertainty/snapshots/6109ad88201426003e696d023ec67c19e7f3d444", "base_model_name": "ibm-granite/granite-3.2-8b-instruct"}' \
     --dtype bfloat16 \
     --max-lora-rank 64 \
-    --no-enable-prefix-caching
+    --enable-prefix-caching
 
 # Check that the lora model is listed along with other models.
 #curl localhost:8000/v1/models | jq .
