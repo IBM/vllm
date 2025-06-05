@@ -37,9 +37,53 @@ class DPMetadata:
 class ALoRAMetadata:
     k_offsets: torch.Tensor
     query_start_locs: List[int]
-    num_reqs: int
+   # num_reqs: int
+    #mask: torch.Tensor 
+    
+def make_alora_mask(k_offsets,query_start_locs):
+       
+    #k_offsets = self.k_offsets
+    #query_start_locs = self.query_start_locs
+    #num_reqs = self.num_reqs
+
+    # (C) Build the 1D “save‐prefix” mask:
+    T = torch.max(query_start_locs)                                           # total rows
+    #row_ids = torch.arange(T, device=output.device)              # [T]
+    starts  = query_start_locs[:-1]                              # [N]
+    ends    = query_start_locs[1:]                               # [N]
+    lengths = ends - starts                                      # [N]
+    kept_lens = lengths - k_offsets                              # [N]
+    kept_lens  = torch.clamp(kept_lens, min=0)      # any negative → 0
+
+    #ge       = row_ids.unsqueeze(0) >= starts.unsqueeze(1)       # [N×T]
+    #lt       = row_ids.unsqueeze(0) < (starts.unsqueeze(1) + kept_lens.unsqueeze(1))  # [N×T]
+    #cond2d   = ge & lt                                           # [N×T]
+    #mask1d   = cond2d.any(dim=0)                                 # [T], dtype=bool
+    device = query_start_locs.device
+    delta = torch.zeros(T + 1, device=device, dtype=torch.bfloat16)
+    starts_clamped = starts #torch.clamp(starts, min=0, max=T)
+    ends_for_scatter = starts + kept_lens
+   # ends_for_scatter = torch.clamp(ends_for_scatter, min=0, max=T)
+    #ones = torch.ones_like(starts_clamped, dtype=output.dtype)  # [N], float
+    #neg_ones = -ones
+    pos_vals = kept_lens.sign().to(torch.bfloat16) #(kept_lens > 0).to(output.dtype)
+    neg_vals = - pos_vals
+    delta.scatter_add_(0, starts, pos_vals)       # delta[start_i] += +1
+    #delta.clamp(min=0,max=1)
+    delta.scatter_add_(0, ends_for_scatter, neg_vals)  # delta[end_i]   += -1
+    #delta.clamp(min=-1,max=1)
+    #delta[0] = 1
+    # 6) Now take cumsum over delta[:-1] to get a “coverage count” per row:
+    cums = torch.cumsum(delta[:-1], dim=0)  # shape [T]; dtype float
+    # Wherever cums[r] > 0, that row was in at least one interval.
+#     print(query_start_locs[:num_reqs+1])
 
 
+    mask1d = cums > 0                       # shape [T], bool
+    #mask2d = mask1d.unsqueeze(1).to(torch.bfloat16)
+       # (D) Save original prefix rows:
+    #self.mask = mask2d
+    return mask1d
 @dataclass
 class ForwardContext:
     # copy from vllm_config.compilation_config.static_forward_context

@@ -17,7 +17,7 @@ from vllm.config import (CompilationLevel, VllmConfig,
 from vllm.distributed.kv_transfer import (get_kv_transfer_group,
                                           has_kv_transfer_group)
 from vllm.distributed.parallel_state import get_pp_group, graph_capture
-from vllm.forward_context import set_forward_context, ALoRAMetadata
+from vllm.forward_context import set_forward_context, ALoRAMetadata, make_alora_mask
 from vllm.logger import init_logger
 from vllm.model_executor.layers.rotary_embedding import MRotaryEmbedding
 from vllm.model_executor.model_loader import get_model
@@ -685,27 +685,27 @@ class GPUModelRunner(LoRAModelRunnerMixin):
                         f"Invocation sequence not found in prompt for request '{req_id}'. "
                         "aLoRA models require the invocation tokens to be present in the input."
                     )
-            else:
-                self.req_id_to_offset[req_id] = 3#None
+            else: # standard LoRA
+                self.req_id_to_offset[req_id] = len(new_req_data.prompt_token_ids)#None
             
             # Recache the new requests with the extracted offset
             existing_cached_request = self.requests[req_id]
-            self.requests[req_id] = CachedRequestState(
-                req_id=req_id,
-                prompt_token_ids=existing_cached_request.prompt_token_ids,
-                mm_inputs=existing_cached_request.mm_inputs,
-                mm_positions=existing_cached_request.mm_positions,
-                sampling_params=existing_cached_request.sampling_params,
-                generator=existing_cached_request.generator,
-                block_ids=existing_cached_request.block_ids,
-                num_computed_tokens=existing_cached_request.num_computed_tokens,
-                output_token_ids=[],
-                lora_request=existing_cached_request.lora_request,
-                k_offset=self.req_id_to_offset[req_id], # updated
-            )
+            self.requests[req_id].k_offset = self.req_id_to_offset[req_id] # = CachedRequestState(
+            ##    req_id=req_id,
+            #    prompt_token_ids=existing_cached_request.prompt_token_ids,
+            #    mm_inputs=existing_cached_request.mm_inputs,
+            #    mm_positions=existing_cached_request.mm_positions,
+            #    sampling_params=existing_cached_request.sampling_params,
+            #    generator=existing_cached_request.generator,
+            #    block_ids=existing_cached_request.block_ids,
+            #    num_computed_tokens=existing_cached_request.num_computed_tokens,
+            #    output_token_ids=[],
+            #    lora_request=existing_cached_request.lora_request,
+            #    k_offset=self.req_id_to_offset[req_id], # updated
+            #)
         
         # Fill in k_offsets based on the `scheduled_new_reqs` and `scheduled_cached_reqs` within the SchedulerOutput.
-        k_offsets = [None] * self.input_batch.num_reqs # List initialization, overwritten below.
+        k_offsets = [1] * (len(self.query_start_loc_np.tolist())-1) # List initialization, overwritten below.
         for new_req_data in scheduler_output.scheduled_new_reqs:
             req_id = new_req_data.req_id
             req_index = self.input_batch.req_id_to_index[req_id]
@@ -715,10 +715,13 @@ class GPUModelRunner(LoRAModelRunnerMixin):
             req_id = cached_req_data.req_id
             req_index = self.input_batch.req_id_to_index[req_id]
             k_offsets[req_index] = self.requests[req_id].k_offset
-        
-        alora_metadata = ALoRAMetadata(k_offsets=k_offsets,
-                                       query_start_locs=self.query_start_loc_np.tolist(),
-                                       num_reqs=self.input_batch.num_reqs,)
+        query_locs = torch.tensor(self.query_start_loc_np.tolist(),device=self.device)
+        if len(query_locs) > self.input_batch.num_reqs+1:
+            query_locs[self.input_batch.num_reqs+1:] = 0
+        alora_metadata = ALoRAMetadata(k_offsets=torch.tensor(k_offsets,device=self.device),
+                                       query_start_locs=query_locs)#,
+                                       #num_reqs=self.input_batch.num_reqs,)
+       
         return alora_metadata
             
 
@@ -1597,14 +1600,16 @@ class GPUModelRunner(LoRAModelRunnerMixin):
                 })
 
             # Prepare dummy ALoRAMetadata
-            dummy_k_offsets = [None] * num_reqs
+            dummy_k_offsets = torch.tensor([1] * max_num_reqs, device=self.device)
             dummy_cu_num_tokens = np.cumsum(num_scheduled_tokens)
             dummy_query_start_loc = [0] * (max_num_reqs + 1)
             dummy_query_start_loc[0] = 0
             dummy_query_start_loc[1:num_reqs + 1] = dummy_cu_num_tokens
+            dummy_query_start_loc = torch.tensor(dummy_query_start_loc,device=self.device)
             dummy_alora_metadata = ALoRAMetadata(k_offsets=dummy_k_offsets,
-                                                 query_start_locs=dummy_query_start_loc,
-                                                 num_reqs=num_reqs,)
+                                                 query_start_locs=dummy_query_start_loc,)
+                                                 #num_reqs=num_reqs,)
+           
             with set_forward_context(None,
                                      self.vllm_config,
                                      num_tokens=num_tokens,

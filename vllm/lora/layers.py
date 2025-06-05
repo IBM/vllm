@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from transformers import PretrainedConfig
 
 from vllm.adapter_commons.layers import AdapterMapping
-from vllm.config import LoRAConfig
+from vllm.config import LoRAConfig, get_current_vllm_config
 from vllm.distributed import (get_tensor_model_parallel_rank,
                               get_tensor_model_parallel_world_size,
                               split_tensor_along_last_dim,
@@ -298,7 +298,13 @@ class BaseLinearLayerWithLoRA(BaseLayerWithLoRA):
         self.tp_size: int
         self.output_size: int
         self.n_slices: int
-
+        
+        # Tell compiler forward context is needed
+        #compilation_config = get_current_vllm_config().compilation_config
+        #prefix = base_layer.prefix
+        #if prefix in compilation_config.static_forward_context:
+        #    raise ValueError(f"Duplicate layer name: {prefix}")
+        #compilation_config.static_forward_context[prefix] = self
     def create_lora_weights(
         self,
         max_loras: int,
@@ -400,7 +406,7 @@ class BaseLinearLayerWithLoRA(BaseLayerWithLoRA):
             assert len(self.lora_bias_stacked)
             self.lora_bias_stacked[0][index, 0, :lora_bias.shape[0]].copy_(
                 lora_bias.T, non_blocking=True)
-
+    
     def apply(self,
               x: torch.Tensor,
               bias: Optional[torch.Tensor] = None,
@@ -415,49 +421,77 @@ class BaseLinearLayerWithLoRA(BaseLayerWithLoRA):
         if x.ndim == 3 and output.ndim == 3:
             output = output.flatten(0, 1)
             x = x.flatten(0, 1)
+        if 1: 
+           # output_cp = output 
+           
+            # Extract aLoRA batch metadata from forward context
+            alora_metadata = get_forward_context().alora_metadata
+           # USE_ALORA = False
+            if 1: #alora_metadata is not None:           
+                k_offsets = alora_metadata.k_offsets 
+                query_start_locs = alora_metadata.query_start_locs
+          #      num_reqs = alora_metadata.num_reqs
+                #if query_start_locs is not None:
+          #      USE_ALORA = True
+                
+
+            # (C) Build the 1D “save‐prefix” mask:
+            T = output.size(0)                                           # total rows
+            #row_ids = torch.arange(T, device=output.device)              # [T]
+            starts  = query_start_locs[:-1]                              # [N]
+            ends    = query_start_locs[1:]                               # [N]
+            lengths = ends - starts                                      # [N]
+            kept_lens = lengths - k_offsets                              # [N]
+            kept_lens  = torch.clamp(kept_lens, min=0)      # any negative → 0
+
+            #ge       = row_ids.unsqueeze(0) >= starts.unsqueeze(1)       # [N×T]
+            #lt       = row_ids.unsqueeze(0) < (starts.unsqueeze(1) + kept_lens.unsqueeze(1))  # [N×T]
+            #cond2d   = ge & lt                                           # [N×T]
+            #mask1d   = cond2d.any(dim=0)                                 # [T], dtype=bool
+            device = output.device
+            delta = torch.zeros(T + 1, device=device, dtype=output.dtype)
+            starts_clamped = starts #torch.clamp(starts, min=0, max=T)
+            ends_for_scatter = starts + kept_lens
+           # ends_for_scatter = torch.clamp(ends_for_scatter, min=0, max=T)
+            #ones = torch.ones_like(starts_clamped, dtype=output.dtype)  # [N], float
+            #neg_ones = -ones
+            pos_vals = kept_lens.sign().to(output.dtype) #(kept_lens > 0).to(output.dtype)
+            neg_vals = - pos_vals
+            delta.scatter_add_(0, starts, pos_vals)       # delta[start_i] += +1
+            #delta.clamp(min=0,max=1)
+            delta.scatter_add_(0, ends_for_scatter, neg_vals)  # delta[end_i]   += -1
+            #delta.clamp(min=-1,max=1)
+            #delta[0] = 1
+            # 6) Now take cumsum over delta[:-1] to get a “coverage count” per row:
+            cums = torch.cumsum(delta[:-1], dim=0)  # shape [T]; dtype float
+            # Wherever cums[r] > 0, that row was in at least one interval.
+       #     print(query_start_locs[:num_reqs+1])
+
+
+          
+            mask1d = cums > 0                       # shape [T], bool
+            mask2d = mask1d.unsqueeze(1).to(output.dtype)
+           # (D) Save original prefix rows:
+        #mask1d = get_forward_context().alora_metadata.mask
+        #mask2d = mask1d.unsqueeze(1).to(output.dtype)
+        orig_out = output.clone()   # [T×D]
+
+        # (E) Apply LoRA in‐place on `output`:
+        self.punica_wrapper.add_lora_linear(
+            output, x,
+            self.lora_a_stacked,
+            self.lora_b_stacked,
+            self.lora_bias_stacked,
+            1.0,
+            self.output_slices
+        )
         
-       # output_cp = output 
-        flg = 0 # For now, this flag exists to make sure we only use deepcopy once and only if needed. Probably possible to make cleaner 
-        # Extract aLoRA batch metadata from forward context
-        alora_metadata = get_forward_context().alora_metadata
-        USE_ALORA = False
-        if alora_metadata is not None:           
-            k_offsets = alora_metadata.k_offsets 
-            query_start_locs = alora_metadata.query_start_locs
-            num_reqs = alora_metadata.num_reqs
-            #if query_start_locs is not None:
-            USE_ALORA = True
-
-        if USE_ALORA:
-            # Build an index tensor of all row‐indices to keep
-            prefix_indices = []
-            for i in range(num_reqs):
-                start = query_start_locs[i]
-                end = query_start_locs[i+1]
-                k = k_offsets[i] if (k_offsets[i] is not None) else end - start
-                if (end - start) > 1 and (k is not None):
-                    # keep rows [start : end - k]
-                    prefix_indices.extend(list(range(start, end - k)))
-            prefix_indices = torch.tensor(prefix_indices, device=output.device)
-
-            # Now prefix_out is a contiguous Tensor:
-            prefix_out = output.index_select(0, prefix_indices)
-
-        # 2) LoRA step stays the same:
-        self.punica_wrapper.add_lora_linear(output, x, self.lora_a_stacked,
-                                            self.lora_b_stacked,
-                                            self.lora_bias_stacked, 1.0,
-                                            self.output_slices)
-
-        # 3) Scatter those prefix rows back to ‘output’:
-        if USE_ALORA:
-            # compute where in the final “output” these prefix rows go,
-            # then do one scatter_ call:
-            new_positions = prefix_indices  # same indices as before
-            output.scatter_(0, 
-                            new_positions.unsqueeze(-1).expand(-1, output.size(-1)), 
-                            prefix_out)
-
+        #mask2d = mask1d.unsqueeze(1).to(orig_out.dtype)           # shape [T×1], dtype=torch.bool
+        # mask2d * orig_out keeps orig_out where mask==True, zero elsewhere
+        # (~mask2d) * output keeps output where mask==False, zero elsewhere
+     #   print(mask2d)
+        final_output = orig_out.mul(mask2d) + output.mul(1.0-mask2d) # mask2d * orig_out + (~mask2d) * output
+        return final_output
         # `output` stores all outputs across all parallel queries concatenated together,
         # so we need to save the first (len-k) tokens of each query
         if 0:

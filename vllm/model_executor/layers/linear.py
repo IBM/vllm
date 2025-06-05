@@ -26,7 +26,8 @@ from vllm.model_executor.parameter import (BasevLLMParameter,
                                            RowvLLMParameter)
 # yapf: enable
 from vllm.model_executor.utils import set_weight_attrs
-
+## TEST
+from vllm.config import CacheConfig, get_current_vllm_config
 logger = init_logger(__name__)
 
 WEIGHT_LOADER_V2_SUPPORTED = [
@@ -227,6 +228,12 @@ class LinearBase(torch.nn.Module):
         return_bias: bool = True,
     ):
         super().__init__()
+        
+        # compiler
+        compilation_config = get_current_vllm_config().compilation_config
+        if prefix in compilation_config.static_forward_context:
+            raise ValueError(f"Duplicate layer name: {prefix}")
+        compilation_config.static_forward_context[prefix] = self
 
         # Keep input parameters
         self.input_size = input_size
