@@ -1609,7 +1609,7 @@ class GPUModelRunner(LoRAModelRunnerMixin):
             dummy_alora_metadata = ALoRAMetadata(k_offsets=dummy_k_offsets,
                                                  query_start_locs=dummy_query_start_loc,)
                                                  #num_reqs=num_reqs,)
-           
+            
             with set_forward_context(None,
                                      self.vllm_config,
                                      num_tokens=num_tokens,
