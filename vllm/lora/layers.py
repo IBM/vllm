@@ -421,62 +421,36 @@ class BaseLinearLayerWithLoRA(BaseLayerWithLoRA):
         if x.ndim == 3 and output.ndim == 3:
             output = output.flatten(0, 1)
             x = x.flatten(0, 1)
-        if 1: 
-           # output_cp = output 
-           
-            # Extract aLoRA batch metadata from forward context
-            alora_metadata = get_forward_context().alora_metadata
-           # USE_ALORA = False
-            if 1: #alora_metadata is not None:           
-                k_offsets = alora_metadata.k_offsets 
-                query_start_locs = alora_metadata.query_start_locs
-          #      num_reqs = alora_metadata.num_reqs
-                #if query_start_locs is not None:
-          #      USE_ALORA = True
-                
+        
+        # Extract aLoRA batch metadata from forward context
+        alora_metadata = get_forward_context().alora_metadata
+        k_offsets = alora_metadata.k_offsets 
+        query_start_locs = alora_metadata.query_start_locs
 
-            # (C) Build the 1D “save‐prefix” mask:
-            T = output.size(0)                                           # total rows
-            #row_ids = torch.arange(T, device=output.device)              # [T]
-            starts  = query_start_locs[:-1]                              # [N]
-            ends    = query_start_locs[1:]                               # [N]
-            lengths = ends - starts                                      # [N]
-            kept_lens = lengths - k_offsets                              # [N]
-            kept_lens  = torch.clamp(kept_lens, min=0)      # any negative → 0
+        # Build the 1D “save‐prefix” mask:
+        T = output.size(0)                                           # total tokens
+        starts  = query_start_locs[:-1]                              # starts and end index of each request
+        ends    = query_start_locs[1:]                               
+        lengths = ends - starts                                      # request lengths
+        kept_lens = lengths - k_offsets                              
+        kept_lens  = torch.clamp(kept_lens, min=0)                   # portion of request to keep as base model weights 
 
-            #ge       = row_ids.unsqueeze(0) >= starts.unsqueeze(1)       # [N×T]
-            #lt       = row_ids.unsqueeze(0) < (starts.unsqueeze(1) + kept_lens.unsqueeze(1))  # [N×T]
-            #cond2d   = ge & lt                                           # [N×T]
-            #mask1d   = cond2d.any(dim=0)                                 # [T], dtype=bool
-            device = output.device
-            delta = torch.zeros(T + 1, device=device, dtype=output.dtype)
-            starts_clamped = starts #torch.clamp(starts, min=0, max=T)
-            ends_for_scatter = starts + kept_lens
-           # ends_for_scatter = torch.clamp(ends_for_scatter, min=0, max=T)
-            #ones = torch.ones_like(starts_clamped, dtype=output.dtype)  # [N], float
-            #neg_ones = -ones
-            pos_vals = kept_lens.sign().to(output.dtype) #(kept_lens > 0).to(output.dtype)
-            neg_vals = - pos_vals
-            delta.scatter_add_(0, starts, pos_vals)       # delta[start_i] += +1
-            #delta.clamp(min=0,max=1)
-            delta.scatter_add_(0, ends_for_scatter, neg_vals)  # delta[end_i]   += -1
-            #delta.clamp(min=-1,max=1)
-            #delta[0] = 1
-            # 6) Now take cumsum over delta[:-1] to get a “coverage count” per row:
-            cums = torch.cumsum(delta[:-1], dim=0)  # shape [T]; dtype float
-            # Wherever cums[r] > 0, that row was in at least one interval.
-       #     print(query_start_locs[:num_reqs+1])
+        device = output.device
+        # Create the alora mask
+        delta = torch.zeros(T + 1, device=device, dtype=output.dtype)
+        ends_for_scatter = starts + kept_lens
+        pos_vals = kept_lens.sign().to(output.dtype) 
+        neg_vals = - pos_vals
+        delta.scatter_add_(0, starts, pos_vals)       
+        delta.scatter_add_(0, ends_for_scatter, neg_vals)  
+        cums = torch.cumsum(delta[:-1], dim=0)  
+        mask1d = cums > 0                       # shape [T], bool
+        mask2d = mask1d.unsqueeze(1).to(output.dtype)
 
-
+        # Clone base layer output before running LoRA
+        orig_out = output.clone()   
           
-            mask1d = cums > 0                       # shape [T], bool
-            mask2d = mask1d.unsqueeze(1).to(output.dtype)
-           # (D) Save original prefix rows:
-        #mask1d = get_forward_context().alora_metadata.mask
-        #mask2d = mask1d.unsqueeze(1).to(output.dtype)
-        orig_out = output.clone()   # [T×D]
-
-        # (E) Apply LoRA in‐place on `output`:
+        # Apply LoRA in‐place on `output`:
         self.punica_wrapper.add_lora_linear(
             output, x,
             self.lora_a_stacked,
@@ -485,57 +459,10 @@ class BaseLinearLayerWithLoRA(BaseLayerWithLoRA):
             1.0,
             self.output_slices
         )
-        
-        #mask2d = mask1d.unsqueeze(1).to(orig_out.dtype)           # shape [T×1], dtype=torch.bool
-        # mask2d * orig_out keeps orig_out where mask==True, zero elsewhere
-        # (~mask2d) * output keeps output where mask==False, zero elsewhere
-     #   print(mask2d)
-        final_output = orig_out.mul(mask2d) + output.mul(1.0-mask2d) # mask2d * orig_out + (~mask2d) * output
+        # Apply alora mask
+        final_output = orig_out.mul(mask2d) + output.mul(1.0-mask2d) 
         return final_output
-        # `output` stores all outputs across all parallel queries concatenated together,
-        # so we need to save the first (len-k) tokens of each query
-        if 0:
-            if USE_ALORA: #query_start_locs is not None:
-                base_prefix_outputs = [None] * num_reqs
         
-                for i in range(num_reqs):
-                    query_start = query_start_locs[i]
-                    query_end = query_start_locs[i + 1]
-                    
-                    seq_len = query_end - query_start
-                    if seq_len == 1 or k_offsets is None: # check if not prefilling 
-                        continue
-                    if flg == 0:
-                        output_cp = output.clone()#copy.deepcopy(output)
-                        flg = 1
-                    if k_offsets[i] is not None:
-                        base_prefix_outputs[i] = output_cp[query_start : query_end - k_offsets[i], :]
-           
-            # Step 2: apply lora
-            self.punica_wrapper.add_lora_linear(output, x, self.lora_a_stacked,
-                                                self.lora_b_stacked,
-                                                self.lora_bias_stacked, 1.0,
-                                                self.output_slices)
-            
-            # Step 3: for each query called with aLoRA, piece together the base_prefix_output to the corresponding output[-k:] to get new modified output
-            if USE_ALORA: #query_start_locs is not None:
-                for i in range(num_reqs):
-                    query_start = query_start_locs[i]
-                    query_end = query_start_locs[i + 1]
-
-                    seq_len = query_end - query_start
-                    
-                    if seq_len == 1 or k_offsets is None: # check if not prefilling
-                        continue
-                    if k_offsets[i] is not None: # if None, then standard LoRA
-                        #print(f"{base_prefix_outputs[i]}")
-                        #print(f"{output[query_start : query_end - k_offsets[i], :]}")
-                        
-                        output[query_start : query_end - k_offsets[i], :] = base_prefix_outputs[i]
-            #if USE_ALORA and seq_len > 1:
-            #    print(f"{base_prefix_outputs[num_reqs-1]}")
-            #    print(f"{output[query_start : query_end - 3, :]}")
-        return output
 
     @property
     def weight(self) -> torch.Tensor:
