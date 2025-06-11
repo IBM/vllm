@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import warnings
-from typing import Optional
+from typing import Optional, List
 
 import msgspec
 
@@ -31,7 +31,9 @@ class LoRARequest(
     lora_local_path: Optional[str] = msgspec.field(default=None)
     long_lora_max_len: Optional[int] = None
     base_model_name: Optional[str] = msgspec.field(default=None)
-
+    #new
+    invocation_tokens: Optional[List[int]] = None
+    k_offset: Optional[int] = None
     def __post_init__(self):
         if self.lora_local_path:
             warnings.warn(

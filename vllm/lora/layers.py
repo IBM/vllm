@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from transformers import PretrainedConfig
 
 from vllm.adapter_commons.layers import AdapterMapping
-from vllm.config import LoRAConfig
+from vllm.config import LoRAConfig, get_current_vllm_config
 from vllm.distributed import (get_tensor_model_parallel_rank,
                               get_tensor_model_parallel_world_size,
                               split_tensor_along_last_dim,
@@ -32,6 +32,10 @@ from vllm.model_executor.layers.rotary_embedding import (
 from vllm.model_executor.layers.vocab_parallel_embedding import (
     VocabParallelEmbedding)
 from vllm.platforms import current_platform
+
+from vllm.forward_context import ForwardContext, get_forward_context
+
+import copy
 
 if TYPE_CHECKING:
     from vllm.lora.punica_wrapper import PunicaWrapperBase
@@ -248,8 +252,7 @@ class VocabParallelEmbeddingWithLoRA(BaseLayerWithLoRA):
             self.lora_a_stacked_2d,
         )
         indices = embeddings_indices[0]
-        full_output = self.base_layer.forward(x +
-                                              (indices * added_tokens_mask))
+        full_output = self.base_layer.forward(x + (indices * added_tokens_mask))
 
         full_output_org = full_output
         if full_output.ndim == 3:
@@ -295,7 +298,7 @@ class BaseLinearLayerWithLoRA(BaseLayerWithLoRA):
         self.tp_size: int
         self.output_size: int
         self.n_slices: int
-
+        
     def create_lora_weights(
         self,
         max_loras: int,
@@ -397,11 +400,14 @@ class BaseLinearLayerWithLoRA(BaseLayerWithLoRA):
             assert len(self.lora_bias_stacked)
             self.lora_bias_stacked[0][index, 0, :lora_bias.shape[0]].copy_(
                 lora_bias.T, non_blocking=True)
-
+    
     def apply(self,
               x: torch.Tensor,
-              bias: Optional[torch.Tensor] = None) -> torch.Tensor:
+              bias: Optional[torch.Tensor] = None,
+        ) -> torch.Tensor:
+
         output = self.base_layer.quant_method.apply(self.base_layer, x, bias)
+       
 
         # In transformers backend, x and output have extra batch dimension like
         # (1, seq_len, hidden_dim), while punica expects (seq_len, hidden_dim),
@@ -409,12 +415,48 @@ class BaseLinearLayerWithLoRA(BaseLayerWithLoRA):
         if x.ndim == 3 and output.ndim == 3:
             output = output.flatten(0, 1)
             x = x.flatten(0, 1)
+        
+        # Extract aLoRA batch metadata from forward context
+        alora_metadata = get_forward_context().alora_metadata
+        k_offsets = alora_metadata.k_offsets 
+        query_start_locs = alora_metadata.query_start_locs
 
-        self.punica_wrapper.add_lora_linear(output, x, self.lora_a_stacked,
-                                            self.lora_b_stacked,
-                                            self.lora_bias_stacked, 1.0,
-                                            self.output_slices)
-        return output
+        # Build the 1D “save‐prefix” mask:
+        T = output.size(0)                                           # total tokens
+        starts  = query_start_locs[:-1]                              # starts and end index of each request
+        ends    = query_start_locs[1:]                               
+        lengths = ends - starts                                      # request lengths
+        kept_lens = lengths - k_offsets                              
+        kept_lens  = torch.clamp(kept_lens, min=0)                   # portion of request to keep as base model weights 
+
+        device = output.device
+        # Create the alora mask
+        delta = torch.zeros(T + 1, device=device, dtype=output.dtype)
+        ends_for_scatter = starts + kept_lens
+        pos_vals = kept_lens.sign().to(output.dtype) 
+        neg_vals = - pos_vals
+        delta.scatter_add_(0, starts, pos_vals)       
+        delta.scatter_add_(0, ends_for_scatter, neg_vals)  
+        cums = torch.cumsum(delta[:-1], dim=0)  
+        mask1d = cums > 0                       # shape [T], bool
+        mask2d = mask1d.unsqueeze(1).to(output.dtype)
+
+        # Clone base layer output before running LoRA
+        orig_out = output.clone()   
+          
+        # Apply LoRA in‐place on `output`:
+        self.punica_wrapper.add_lora_linear(
+            output, x,
+            self.lora_a_stacked,
+            self.lora_b_stacked,
+            self.lora_bias_stacked,
+            1.0,
+            self.output_slices
+        )
+        # Apply alora mask
+        final_output = orig_out.mul(mask2d) + output.mul(1.0-mask2d) 
+        return final_output
+        
 
     @property
     def weight(self) -> torch.Tensor:
@@ -468,9 +510,9 @@ class ReplicatedLinearWithLoRA(BaseLinearLayerWithLoRA):
         """
         bias = (self.base_layer.bias
                 if not self.base_layer.skip_bias_add else None)
-
+        
         # Matrix multiply.
-        output = self.apply(input_, bias)
+        output, seq_len = self.apply(input_, bias)
 
         output_bias = (self.base_layer.bias
                        if self.base_layer.skip_bias_add else None)
@@ -565,7 +607,7 @@ class ColumnParallelLinearWithLoRA(BaseLinearLayerWithLoRA):
         """
         bias = (self.base_layer.bias
                 if not self.base_layer.skip_bias_add else None)
-
+        
         # Matrix multiply.
         output_parallel = self.apply(input_, bias)
         if self.base_layer.gather_output:
@@ -866,6 +908,11 @@ class MergedQKVParallelLinearWithLoRA(MergedColumnParallelLinearWithLoRA):
                 and len(packed_modules_list) == 3)
 
 
+#TODO: Implement this
+class QKVCrossParallelLinearWithLoRA(BaseLayerWithLoRA):
+    pass
+
+
 class RowParallelLinearWithLoRA(BaseLinearLayerWithLoRA):
 
     def __init__(self, base_layer: RowParallelLinear) -> None:
@@ -916,7 +963,7 @@ class RowParallelLinearWithLoRA(BaseLinearLayerWithLoRA):
             splitted_input = split_tensor_along_last_dim(
                 input_, num_partitions=self.base_layer.tp_size)
             input_parallel = splitted_input[self.tp_rank].contiguous()
-
+        
         # Matrix multiply.
         output_parallel = self.apply(input_parallel)
         if self.base_layer.reduce_results and self.base_layer.tp_size > 1:
