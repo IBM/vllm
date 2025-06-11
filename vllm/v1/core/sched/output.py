@@ -29,7 +29,6 @@ class NewRequestData:
     block_ids: list[int]
     num_computed_tokens: int
     lora_request: Optional[LoRARequest]
-    #invocation_tokens: Optional[list[int]] = None
 
     @classmethod
     def from_request(
@@ -47,7 +46,6 @@ class NewRequestData:
             block_ids=block_ids,
             num_computed_tokens=request.num_computed_tokens,
             lora_request=request.lora_request,
-            #invocation_tokens=request.invocation_tokens,
         )
 
 
