@@ -299,12 +299,6 @@ class BaseLinearLayerWithLoRA(BaseLayerWithLoRA):
         self.output_size: int
         self.n_slices: int
         
-        # Tell compiler forward context is needed
-        #compilation_config = get_current_vllm_config().compilation_config
-        #prefix = base_layer.prefix
-        #if prefix in compilation_config.static_forward_context:
-        #    raise ValueError(f"Duplicate layer name: {prefix}")
-        #compilation_config.static_forward_context[prefix] = self
     def create_lora_weights(
         self,
         max_loras: int,
