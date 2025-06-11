@@ -38,8 +38,6 @@ class CachedRequestState:
 
     lora_request: Optional[LoRARequest] = None
 
-    #k_offset: Optional[int] = 1
-
     def __post_init__(self):
         self.num_prompt_tokens = len(self.prompt_token_ids)
 
