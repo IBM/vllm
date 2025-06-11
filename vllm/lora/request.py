@@ -95,3 +95,30 @@ class LoRARequest(
         identified by their names across engines.
         """
         return hash(self.lora_name)
+
+class aLoRARequest(LoRARequest):
+    """
+    Extension of LoRARequest to include invocation_tokens
+    for aLoRA-specific logic.
+    """
+    invocation_tokens: Optional[List[int]] = None
+    k_offsets: Optional[int] = None
+    def __post_init__(self):
+        # Call base class __post_init__
+        super().__post_init__()
+
+        # Custom logic for aLoRARequest
+        if self.invocation_tokens is not None and not isinstance(self.invocation_tokens, list):
+            raise ValueError("invocation_tokens must be a list of integers or None")
+
+   @classmethod
+   def from_lora_request(cls, lora_request: LoRARequest, invocation_tokens: Optional[List[int]] = None):
+        return cls(
+            lora_name=lora_request.lora_name,
+            lora_int_id=lora_request.lora_int_id,
+            lora_path=lora_request.lora_path,
+            lora_local_path=lora_request.lora_local_path,
+            long_lora_max_len=lora_request.long_lora_max_len,
+            base_model_name=lora_request.base_model_name,
+            invocation_tokens=invocation_tokens
+        )
