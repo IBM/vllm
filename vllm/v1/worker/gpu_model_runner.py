@@ -286,7 +286,7 @@ class GPUModelRunner(LoRAModelRunnerMixin):
                                         pin_memory=self.pin_memory)
         self.seq_lens_np = self.seq_lens_cpu.numpy()
 
-        self.req_id_to_offset: dict[int, int] = {}
+        #self.req_id_to_offset: dict[int, int] = {}
 
     def _update_states(self, scheduler_output: "SchedulerOutput") -> None:
         """Update the cached states and the persistent batch with the scheduler
@@ -667,26 +667,25 @@ class GPUModelRunner(LoRAModelRunnerMixin):
         for new_req_data in scheduler_output.scheduled_new_reqs:
             req_id = new_req_data.req_id
             print(new_req_data.lora_request) 
-            if new_req_data.lora_request is not None and new_req_data.lora_request.invocation_tokens is not None:
-                print("WHATTUP")
+            if new_req_data.lora_request is not None and new_req_data.lora_request.invocation_tokens is not None: 
                 tokens = new_req_data.lora_request.invocation_tokens
                 prompt_ids = new_req_data.prompt_token_ids
                 n = len(tokens)
-                self.req_id_to_offset[req_id] = -1
+                k_offset = -1
                 # only bother if there actually are invocation tokens
                 if n > 0 and len(prompt_ids) >= n:
                     # scan backward for the last match (faster than full forward scan+max)
                     for idx in range(len(prompt_ids) - n, -1, -1):
                         if prompt_ids[idx : idx + n] == tokens:
                             # offset = number of tokens from the start of that match to the end of the prompt
-                            self.req_id_to_offset[req_id] = len(prompt_ids) - idx - 1
+                            k_offset = len(prompt_ids) - idx - 1
                             break
-                if self.req_id_to_offset[req_id] == -1:
+                if k_offset == -1:
                     raise ValueError(
                         f"Invocation sequence not found in prompt for request '{req_id}'. "
                         "aLoRA models require the invocation tokens to be present in the input."
                     )
-                self.requests[req_id].lora_request.k_offset = self.req_id_to_offset[req_id]
+                self.requests[req_id].lora_request.k_offset = k_offset
             #else: # base model or standard LoRA
             #    self.req_id_to_offset[req_id] = len(new_req_data.prompt_token_ids)
             
@@ -728,7 +727,7 @@ class GPUModelRunner(LoRAModelRunnerMixin):
         alora_metadata = ALoRAMetadata(k_offsets=torch.tensor(k_offsets,device=self.device),
                                        query_start_locs=query_locs)#,
                                        #num_reqs=self.input_batch.num_reqs,)
-       
+        
         return alora_metadata
             
 

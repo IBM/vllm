@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # More documentation: https://docs.vllm.ai/en/v0.8.3/serving/openai_compatible_server.html#vllm-serve
-export VLLM_V1_USE_ACTIVATED_LORA="1"
+export VLLM_USE_V1="1"
 # Specify base model (and optionally loras) to load in when starting the server.
 vllm serve ibm-granite/granite-3.2-8b-instruct \
     --enable-lora \
@@ -9,7 +9,7 @@ vllm serve ibm-granite/granite-3.2-8b-instruct \
     --dtype bfloat16 \
     --max-lora-rank 64 \
     --enable-prefix-caching
-
+#--no-enable-prefix-caching
 # Check that the lora model is listed along with other models.
 #curl localhost:8000/v1/models | jq .
 

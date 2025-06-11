@@ -32,16 +32,16 @@ llm = LLM(model=BASE_NAME,
           enable_lora=True,
           enforce_eager=False,
           dtype=torch.bfloat16,
-          enable_prefix_caching=False, # enable APC
+          enable_prefix_caching=True, # enable APC
           max_lora_rank=64, 
           enable_chunked_prefill=False,
          )
 
 prompts = [
-    "<|start_of_role|>user<|end_of_role|>What is MIT?<|end_of_text|>",#\n<|start_of_role|>assistant<|end_of_role|>",
+    "<|start_of_role|>user<|end_of_role|>What is MIT?<|end_of_text|>\n<|start_of_role|>assistant<|end_of_role|>",
     "What is MIT?",
   #  "<|start_of_role|>user<|end_of_role|>What is the capital of Massachusetts?<|end_of_text|>\n",#<|start_of_role|>assistant<|end_of_role|>",
-  #  "<|start_of_role|>user<|end_of_role|>What is MIT?<|end_of_text|>",
+    "<|start_of_role|>user<|end_of_role|>What is MIT?<|end_of_text|>\n<|start_of_role|>assistant<|end_of_role|>",
    # "<|start_of_role|>user<|end_of_role|>What is the capital of Massachusetts?<|end_of_text|>\n",#<|start_of_role|>assistant<|end_of_role|>",
    # "<|start_of_role|>user<|end_of_role|>What is MIT?<|end_of_text|>",# + invocation_string,
 ]
