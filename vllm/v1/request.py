@@ -30,7 +30,6 @@ class Request:
         lora_request: Optional["LoRARequest"] = None,
         structured_output_request: Optional["StructuredOutputRequest"] = None,
         cache_salt: Optional[str] = None,
-        invocation_tokens: Optional[list[int]] = None,
     ) -> None:
         self.request_id = request_id
         self.sampling_params = sampling_params
