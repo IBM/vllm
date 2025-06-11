@@ -14,6 +14,7 @@ from vllm.v1.kv_cache_interface import (FullAttentionSpec, KVCacheConfig,
                                         KVCacheTensor, SlidingWindowSpec)
 from vllm.v1.metrics.stats import PrefixCacheStats
 from vllm.v1.request import Request
+from vllm.lora.request import aLoRARequest
 import vllm.envs as envs
 
 logger = init_logger(__name__)
@@ -419,8 +420,8 @@ def hash_block_tokens(
     if not parent_block_hash:
         parent_block_hash = NONE_HASH
 
-    if envs.VLLM_V1_USE_ACTIVATED_LORA:
-        extra_keys = None
+    #if envs.VLLM_V1_USE_ACTIVATED_LORA:
+    #    extra_keys = None
 
     curr_block_token_ids_tuple = tuple(curr_block_token_ids)
     return BlockHashType(
@@ -444,6 +445,18 @@ def hash_request_tokens(hash_function: Any, block_size: int,
     token_ids = request.all_token_ids
 
     req_need_extra_keys = need_extra_keys(request)
+    if isinstance(request.lora_request, aLoRARequest):
+        use_alora=True
+        invocation_tokens = request.lora_request.invocation_tokens
+        # scan backward for the last match (faster than full forward scan+max)
+        invocation_start = -1
+        for idx in range(len(token_ids) - n, -1, -1):
+            if token_ids[idx : idx + n] == invocation_tokens:
+                invocation_start = idx + 1 # weights activated 1 token after start
+                    break
+                
+    else:
+        use_alora=False
     req_extra_keys = None
     curr_mm_idx = 0
 
@@ -460,6 +473,8 @@ def hash_request_tokens(hash_function: Any, block_size: int,
             # MM and LoRA requests need extra keys for block-hash computation.
             req_extra_keys, curr_mm_idx = generate_block_hash_extra_keys(
                 request, start, end, curr_mm_idx)
+            if use_alora and end <= invocation_start:
+                req_extra_keys = None # cache is equivalent to base model cache
 
         block_hash = hash_block_tokens(hash_function, parent_block_hash_value,
                                        block_token_ids, req_extra_keys)
