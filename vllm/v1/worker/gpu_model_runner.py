@@ -666,8 +666,9 @@ class GPUModelRunner(LoRAModelRunnerMixin):
         """
         for new_req_data in scheduler_output.scheduled_new_reqs:
             req_id = new_req_data.req_id
-            
-            if new_req_data.invocation_tokens is not None: 
+            print(new_req_data.lora_request) 
+            if new_req_data.lora_request is not None and new_req_data.lora_request.invocation_tokens is not None:
+                print("WHATTUP")
                 tokens = new_req_data.lora_request.invocation_tokens
                 prompt_ids = new_req_data.prompt_token_ids
                 n = len(tokens)
@@ -685,11 +686,12 @@ class GPUModelRunner(LoRAModelRunnerMixin):
                         f"Invocation sequence not found in prompt for request '{req_id}'. "
                         "aLoRA models require the invocation tokens to be present in the input."
                     )
-            else: # standard LoRA
-                self.req_id_to_offset[req_id] = len(new_req_data.prompt_token_ids)
+                self.requests[req_id].lora_request.k_offset = self.req_id_to_offset[req_id]
+            #else: # base model or standard LoRA
+            #    self.req_id_to_offset[req_id] = len(new_req_data.prompt_token_ids)
             
             # Update the new requests with the extracted offset            
-            self.requests[req_id].lora_request.k_offset = self.req_id_to_offset[req_id] # = CachedRequestState(
+            # self.requests[req_id].lora_request.k_offset = self.req_id_to_offset[req_id] # = CachedRequestState(
             ##    req_id=req_id,
             #    prompt_token_ids=existing_cached_request.prompt_token_ids,
             #    mm_inputs=existing_cached_request.mm_inputs,
@@ -708,12 +710,18 @@ class GPUModelRunner(LoRAModelRunnerMixin):
         for new_req_data in scheduler_output.scheduled_new_reqs:
             req_id = new_req_data.req_id
             req_index = self.input_batch.req_id_to_index[req_id]
-            k_offsets[req_index] = self.requests[req_id].lora_request.k_offset
+            if self.requests[req_id].lora_request is not None and self.requests[req_id].lora_request.k_offset is not None:
+                k_offsets[req_index] = self.requests[req_id].lora_request.k_offset
+            else:
+                k_offsets[req_index] = len(self.requests[req_id].prompt_token_ids)
 
         for cached_req_data in scheduler_output.scheduled_cached_reqs:
             req_id = cached_req_data.req_id
             req_index = self.input_batch.req_id_to_index[req_id]
-            k_offsets[req_index] = self.requests[req_id].lora_request.k_offset
+            if self.requests[req_id].lora_request is not None and self.requests[req_id].lora_request.k_offset is not None:
+                k_offsets[req_index] = self.requests[req_id].lora_request.k_offset
+            else:
+                k_offsets[req_index] = len(self.requests[req_id].prompt_token_ids)
         query_locs = torch.tensor(self.query_start_loc_np.tolist(),device=self.device)
         if len(query_locs) > self.input_batch.num_reqs+1:
             query_locs[self.input_batch.num_reqs+1:] = 0
@@ -1608,7 +1616,8 @@ class GPUModelRunner(LoRAModelRunnerMixin):
             dummy_alora_metadata = ALoRAMetadata(k_offsets=dummy_k_offsets,
                                                  query_start_locs=dummy_query_start_loc,)
                                                  #num_reqs=num_reqs,)
-            
+           
+
             with set_forward_context(None,
                                      self.vllm_config,
                                      num_tokens=num_tokens,

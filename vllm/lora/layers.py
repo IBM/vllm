@@ -413,7 +413,6 @@ class BaseLinearLayerWithLoRA(BaseLayerWithLoRA):
         ) -> torch.Tensor:
 
         output = self.base_layer.quant_method.apply(self.base_layer, x, bias)
-
         
         # In transformers backend, x and output have extra batch dimension like
         # (1, seq_len, hidden_dim), while punica expects (seq_len, hidden_dim),

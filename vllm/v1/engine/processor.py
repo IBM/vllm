@@ -8,7 +8,7 @@ from vllm.config import VllmConfig
 from vllm.inputs import ProcessorInputs, PromptType, SingletonInputs
 from vllm.inputs.parse import split_enc_dec_inputs
 from vllm.inputs.preprocess import InputPreprocessor
-from vllm.lora.request import LoRARequest, aLoRARequest
+from vllm.lora.request import LoRARequest
 from vllm.multimodal import (MULTIMODAL_REGISTRY, MultiModalKwargs,
                              MultiModalRegistry)
 from vllm.multimodal.inputs import PlaceholderRange
@@ -312,19 +312,17 @@ class Processor:
         
         # Tokenize aLoRA invocation sequence if applicable.
         if lora_request is not None:
-            
+                        
             # Load in adapter config file
             lora_path = get_adapter_absolute_path(lora_request.lora_path)
             lora_config_path = os.path.join(lora_path, "adapter_config.json")
             with open(lora_config_path) as f:
                 config = json.load(f)
-
+            
             if "invocation_string" in config: # check if aLoRA
                 invocation_tokens = self.input_preprocessor._tokenize_prompt(config["invocation_string"],lora_request=lora_request,tokenization_kwargs=tokenization_kwargs)
                 # Make it an aLoRA request (in future, this will happen upstream)
-                lora_request = aLoRARequest.from_lora_request(lora_request, invocation_tokens=invocation_tokens)
-
-
+                lora_request.invocation_tokens = invocation_tokens
         return decoder_inputs.get("prompt"), EngineCoreRequest(
             request_id=request_id,
             prompt_token_ids=decoder_inputs["prompt_token_ids"],

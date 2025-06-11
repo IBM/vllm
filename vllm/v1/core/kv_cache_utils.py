@@ -14,7 +14,7 @@ from vllm.v1.kv_cache_interface import (FullAttentionSpec, KVCacheConfig,
                                         KVCacheTensor, SlidingWindowSpec)
 from vllm.v1.metrics.stats import PrefixCacheStats
 from vllm.v1.request import Request
-from vllm.lora.request import aLoRARequest
+
 import vllm.envs as envs
 
 logger = init_logger(__name__)
@@ -445,16 +445,16 @@ def hash_request_tokens(hash_function: Any, block_size: int,
     token_ids = request.all_token_ids
 
     req_need_extra_keys = need_extra_keys(request)
-    if isinstance(request.lora_request, aLoRARequest):
+    if request.lora_request is not None and request.lora_request.invocation_tokens is not None:
         use_alora=True
         invocation_tokens = request.lora_request.invocation_tokens
         # scan backward for the last match (faster than full forward scan+max)
         invocation_start = -1
+        n = len(invocation_tokens)
         for idx in range(len(token_ids) - n, -1, -1):
             if token_ids[idx : idx + n] == invocation_tokens:
                 invocation_start = idx + 1 # weights activated 1 token after start
-                    break
-                
+                break
     else:
         use_alora=False
     req_extra_keys = None

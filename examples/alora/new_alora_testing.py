@@ -14,8 +14,8 @@ BASE_NAME = "ibm-granite/granite-3.2-8b-instruct"
 ALORA_NAME = "ibm-granite/granite-3.2-8b-alora-uncertainty"
 invocation_string = "<|start_of_role|>certainty<|end_of_role|>"
 
-USE_ALORA = True
-os.environ['VLLM_V1_USE_ACTIVATED_LORA'] = "1" if USE_ALORA else "0"
+#USE_ALORA = True
+#os.environ['VLLM_V1_USE_ACTIVATED_LORA'] = "1" if USE_ALORA else "0"
 os.environ['VLLM_USE_V1'] = "1"
 os.environ['VLLM_V1_USE_DEMO_LOGGING'] = "1"
 from huggingface_hub import snapshot_download
@@ -32,7 +32,7 @@ llm = LLM(model=BASE_NAME,
           enable_lora=True,
           enforce_eager=False,
           dtype=torch.bfloat16,
-          enable_prefix_caching=True, # enable APC
+          enable_prefix_caching=False, # enable APC
           max_lora_rank=64, 
           enable_chunked_prefill=False,
          )
