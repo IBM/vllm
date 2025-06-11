@@ -55,7 +55,7 @@ class Request:
         self.num_computed_tokens = 0
         self.cache_salt: Optional[str] = cache_salt
 
-        self.invocation_tokens: Optional[list[int]] = invocation_tokens
+        #self.invocation_tokens: Optional[list[int]] = invocation_tokens
 
         # Multi-modal related
         self.mm_positions = multi_modal_placeholders or []
@@ -95,7 +95,7 @@ class Request:
             structured_output_request=StructuredOutputRequest(
                 sampling_params=request.sampling_params),
             cache_salt=request.cache_salt,
-            invocation_tokens=request.invocation_tokens,
+            #invocation_tokens=request.invocation_tokens,
         )
 
     def append_output_token_ids(
