@@ -668,7 +668,7 @@ class GPUModelRunner(LoRAModelRunnerMixin):
             req_id = new_req_data.req_id
             
             if new_req_data.invocation_tokens is not None: 
-                tokens = new_req_data.invocation_tokens
+                tokens = new_req_data.lora_request.invocation_tokens
                 prompt_ids = new_req_data.prompt_token_ids
                 n = len(tokens)
                 self.req_id_to_offset[req_id] = -1
@@ -686,11 +686,10 @@ class GPUModelRunner(LoRAModelRunnerMixin):
                         "aLoRA models require the invocation tokens to be present in the input."
                     )
             else: # standard LoRA
-                self.req_id_to_offset[req_id] = len(new_req_data.prompt_token_ids)#None
+                self.req_id_to_offset[req_id] = len(new_req_data.prompt_token_ids)
             
-            # Recache the new requests with the extracted offset
-            existing_cached_request = self.requests[req_id]
-            self.requests[req_id].k_offset = self.req_id_to_offset[req_id] # = CachedRequestState(
+            # Update the new requests with the extracted offset            
+            self.requests[req_id].lora_request.k_offset = self.req_id_to_offset[req_id] # = CachedRequestState(
             ##    req_id=req_id,
             #    prompt_token_ids=existing_cached_request.prompt_token_ids,
             #    mm_inputs=existing_cached_request.mm_inputs,
@@ -709,12 +708,12 @@ class GPUModelRunner(LoRAModelRunnerMixin):
         for new_req_data in scheduler_output.scheduled_new_reqs:
             req_id = new_req_data.req_id
             req_index = self.input_batch.req_id_to_index[req_id]
-            k_offsets[req_index] = self.requests[req_id].k_offset
+            k_offsets[req_index] = self.requests[req_id].lora_request.k_offset
 
         for cached_req_data in scheduler_output.scheduled_cached_reqs:
             req_id = cached_req_data.req_id
             req_index = self.input_batch.req_id_to_index[req_id]
-            k_offsets[req_index] = self.requests[req_id].k_offset
+            k_offsets[req_index] = self.requests[req_id].lora_request.k_offset
         query_locs = torch.tensor(self.query_start_loc_np.tolist(),device=self.device)
         if len(query_locs) > self.input_batch.num_reqs+1:
             query_locs[self.input_batch.num_reqs+1:] = 0
