@@ -172,6 +172,12 @@ if TYPE_CHECKING:
     VLLM_GPT_OSS_HARMONY_SYSTEM_INSTRUCTIONS: bool = False
     VLLM_CUSTOM_SCOPES_FOR_PROFILING: bool = False
     VLLM_KV_EVENTS_USE_INT_BLOCK_HASHES: bool = True
+    # spans vars
+    VLLM_V1_SPANS_ENABLED: bool = False
+    VLLM_V1_SPANS_DEBUG: bool = False
+    VLLM_V1_SPANS_TOKEN_PLUS: int = -1
+    VLLM_V1_SPANS_TOKEN_CROSS: int = -1
+    VLLM_V1_SPANS_DISABLE_REPOSITION: bool = False
 
 
 def get_default_cache_root():
@@ -1221,6 +1227,31 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # raw bytes. Defaults to True for backward compatibility.
     "VLLM_KV_EVENTS_USE_INT_BLOCK_HASHES":
     lambda: bool(int(os.getenv("VLLM_KV_EVENTS_USE_INT_BLOCK_HASHES", "1"))),
+
+    # whether to enable block-attention (span detection, fan-in, repositioning)
+    "VLLM_V1_SPANS_ENABLED":
+    lambda: os.environ.get("VLLM_V1_SPANS_ENABLED", "False") == "True",
+
+    # whether to print details pertaining to the block-attention
+    # implementation
+    "VLLM_V1_SPANS_DEBUG":
+    lambda: os.environ.get("VLLM_V1_SPANS_DEBUG", "False") == "True",
+
+    # for block-attention, the token that will be used in order to
+    # indicate the beginning of a span (needed for it to work)
+    "VLLM_V1_SPANS_TOKEN_PLUS":
+    lambda: int(os.environ.get("VLLM_V1_SPANS_TOKEN_PLUS", "-1")),
+
+    # for block-attention, a token that signals the beginning of a
+    # span which needs to depend on all previous tokens
+    "VLLM_V1_SPANS_TOKEN_CROSS":
+    lambda: int(os.environ.get("VLLM_V1_SPANS_TOKEN_CROSS", "-1")),
+
+    # for block-attention, detected spans will be loaded but not repositioned
+    "VLLM_V1_SPANS_DISABLE_REPOSITION":
+    lambda: os.environ.get("VLLM_V1_SPANS_DISABLE_REPOSITION", "False"
+                           ) == "True",
+
 }
 
 # --8<-- [end:env-vars-definition]
