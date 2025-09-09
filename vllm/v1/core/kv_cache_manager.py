@@ -4,6 +4,7 @@
 from dataclasses import dataclass
 from typing import Literal, Optional, overload
 
+import vllm.envs as envs
 from vllm.distributed.kv_events import KVCacheEvent
 from vllm.logger import init_logger
 from vllm.v1.core.kv_cache_coordinator import get_kv_cache_coordinator
@@ -16,6 +17,13 @@ logger = init_logger(__name__)
 
 
 @dataclass
+class BlockRepositionRequest:
+    block_id: int
+    kvc_pos: int
+    prompt_pos: int
+
+
+@dataclass
 class KVCacheBlocks:
     """
     The allocation result of KVCacheManager, work as the interface between
@@ -23,6 +31,7 @@ class KVCacheBlocks:
     structure from the Scheduler.
     """
     blocks: tuple[list[KVCacheBlock], ...]
+    blocks_to_reposition: list[BlockRepositionRequest]
     """
     blocks[i][j] refers to the i-th kv_cache_group and the j-th block of tokens.
     We don't use block of tokens as the outer dimension because it assumes all
@@ -35,7 +44,8 @@ class KVCacheBlocks:
         """Adds two KVCacheBlocks instances."""
         return KVCacheBlocks(
             tuple(blk1 + blk2
-                  for blk1, blk2 in zip(self.blocks, other.blocks)))
+                  for blk1, blk2 in zip(self.blocks, other.blocks)),
+            self.blocks_to_reposition + other.blocks_to_reposition)
 
     @overload
     def get_block_ids(
@@ -78,7 +88,7 @@ class KVCacheBlocks:
 
     def new_empty(self) -> "KVCacheBlocks":
         """Creates a new KVCacheBlocks instance with no blocks."""
-        return KVCacheBlocks(tuple([] for _ in range(len(self.blocks))))
+        return KVCacheBlocks(tuple([] for _ in range(len(self.blocks))), [])
 
 
 class KVCacheManager:
@@ -180,6 +190,57 @@ class KVCacheManager:
         computed_blocks, num_new_computed_tokens = (
             self.coordinator.find_longest_cache_hit(request.block_hashes,
                                                     max_cache_hit_length))
+        if envs.VLLM_V1_SPANS_DEBUG:
+            print(
+                "[SPANS -> kv_cache_manager] here's the blocks hashed in " \
+                    "this request:",
+                [str(abs(b.hash_value))[:4] for b in request.block_hashes])
+            kvcache_contents = [
+                str(abs(b.block_hash.block_hash.hash_value))[:4]
+                if b.block_hash else None for b in self.block_pool.blocks
+                if b._block_hash
+            ]
+            if len(kvcache_contents) > 32:
+                kvcache_contents = kvcache_contents[:32] + [
+                    '... (too long to print it all)'
+                ]
+            print(
+                "[SPANS -> kv_cache_manager] here's the contents of the " \
+                    "kv cache:",
+                kvcache_contents)
+            print(
+                "[SPANS -> kv_cache_manager] here's the number of blocks " \
+                    "that hit the cache:",
+                [
+                    str(abs(b.block_hash.block_hash.hash_value))[:4]
+                    if b.block_hash else None for b in computed_blocks[0]
+                ])
+
+        blocks_to_reposition = []
+        if envs.VLLM_V1_SPANS_ENABLED:
+            # Spans does yet not support hybrid models
+            assert len(computed_blocks) == 1
+            for i, b in enumerate(computed_blocks[0]):
+                prompt_pos = i * 16
+                kvc_pos = b.position
+                if envs.VLLM_V1_SPANS_DEBUG:
+                    print(
+                        f"[SPANS -> kv_cache_manager] checking block " \
+                        f"{b.block_id} with prompot pos {prompt_pos} " \
+                        f"and kv pos {kvc_pos}"
+                    )
+                assert isinstance(kvc_pos, int)
+                if kvc_pos != prompt_pos:
+                    if envs.VLLM_V1_SPANS_DEBUG:
+                        print(
+                            f"[SPANS -> kv_cache_manager] from pos: {kvc_pos} "\
+                            f"to prompt pos: {prompt_pos} repositioning needed"
+                        )
+
+                    blocks_to_reposition.append(
+                        BlockRepositionRequest(b.block_id, kvc_pos,
+                                               prompt_pos))
+                    b.position = int(prompt_pos)
 
         if self.log_stats:
             assert self.prefix_cache_stats is not None
@@ -187,7 +248,8 @@ class KVCacheManager:
             self.prefix_cache_stats.queries += request.num_tokens
             self.prefix_cache_stats.hits += num_new_computed_tokens
 
-        return KVCacheBlocks(computed_blocks), num_new_computed_tokens
+        return KVCacheBlocks(computed_blocks, blocks_to_reposition),\
+                num_new_computed_tokens
 
     def allocate_slots(
         self,
@@ -290,7 +352,7 @@ class KVCacheManager:
         # P/D: delay caching blocks if we have to recv from
         # remote. Update state for locally cached blocks.
         if not self.enable_caching or delay_cache_blocks:
-            return KVCacheBlocks(new_blocks)
+            return KVCacheBlocks(new_blocks, [])
 
         # NOTE(woosuk): We want to commit (cache) up to num_computed_tokens +
         # num_new_tokens, but must exclude "non-committable" tokens (e.g.,
@@ -300,7 +362,7 @@ class KVCacheManager:
                                   request.num_tokens)
         self.coordinator.cache_blocks(request, num_tokens_to_cache)
 
-        return KVCacheBlocks(new_blocks)
+        return KVCacheBlocks(new_blocks, [])
 
     def free(self, request: Request) -> None:
         """Free the blocks allocated for the request.
@@ -381,7 +443,7 @@ class KVCacheManager:
 
     def get_blocks(self, request_id: str) -> KVCacheBlocks:
         """Get the blocks of a request."""
-        return KVCacheBlocks(self.coordinator.get_blocks(request_id))
+        return KVCacheBlocks(self.coordinator.get_blocks(request_id), [])
 
     def get_block_ids(self, request_id: str) -> tuple[list[int], ...]:
         """Get the block ids of a request."""
@@ -394,5 +456,5 @@ class KVCacheManager:
 
     def create_empty_block_list(self) -> KVCacheBlocks:
         """Creates a new KVCacheBlocks instance with no blocks."""
-        return KVCacheBlocks(tuple([]
-                                   for _ in range(self.num_kv_cache_groups)))
+        return KVCacheBlocks(
+            tuple([] for _ in range(self.num_kv_cache_groups)), [])

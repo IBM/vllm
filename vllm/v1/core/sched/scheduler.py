@@ -9,6 +9,7 @@ from collections import defaultdict
 from collections.abc import Iterable
 from typing import Any, Optional, Union
 
+import vllm.envs as envs
 from vllm.config import VllmConfig
 from vllm.distributed.kv_events import EventPublisherFactory, KVEventBatch
 from vllm.distributed.kv_transfer.kv_connector.factory import (
@@ -19,7 +20,8 @@ from vllm.logger import init_logger
 from vllm.multimodal import MULTIMODAL_REGISTRY, MultiModalRegistry
 from vllm.v1.core.encoder_cache_manager import (EncoderCacheManager,
                                                 compute_encoder_budget)
-from vllm.v1.core.kv_cache_manager import KVCacheBlocks, KVCacheManager
+from vllm.v1.core.kv_cache_manager import (BlockRepositionRequest,
+                                           KVCacheBlocks, KVCacheManager)
 from vllm.v1.core.sched.interface import SchedulerInterface
 from vllm.v1.core.sched.output import (CachedRequestData, NewRequestData,
                                        SchedulerOutput)
@@ -330,6 +332,7 @@ class Scheduler(SchedulerInterface):
         skipped_waiting_requests = create_request_queue(self.policy)
 
         # Next, schedule the WAITING requests.
+        blocks_to_reposition: list[BlockRepositionRequest] = []
         if not preempted_reqs:
             while self.waiting and token_budget > 0:
                 if len(self.running) == self.max_num_running_reqs:
@@ -380,6 +383,12 @@ class Scheduler(SchedulerInterface):
                     new_computed_blocks, num_new_local_computed_tokens = \
                         self.kv_cache_manager.get_computed_blocks(
                             request)
+
+                    # handle repositioning requests
+                    if envs.VLLM_V1_SPANS_ENABLED and \
+                        len(new_computed_blocks.blocks_to_reposition) > 0:
+                        blocks_to_reposition.extend(
+                            new_computed_blocks.blocks_to_reposition)
 
                     # Get externally-cached tokens if using a KVConnector.
                     if self.connector is not None:
@@ -589,6 +598,7 @@ class Scheduler(SchedulerInterface):
             get_freed_mm_hashes(),
             structured_output_request_ids=structured_output_request_ids,
             grammar_bitmask=grammar_bitmask,
+            blocks_to_reposition=blocks_to_reposition,
         )
 
         # NOTE(Kuntai): this function is designed for multiple purposes:

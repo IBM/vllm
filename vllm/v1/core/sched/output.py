@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from vllm.multimodal.inputs import MultiModalKwargsItem, PlaceholderRange
     from vllm.pooling_params import PoolingParams
     from vllm.sampling_params import SamplingParams
+    from vllm.v1.core.kv_cache_manager import BlockRepositionRequest
     from vllm.v1.request import Request
 
 
@@ -152,6 +153,9 @@ class SchedulerOutput:
     structured_output_request_ids: dict[str, int]
     # the bitmask for the whole batch
     grammar_bitmask: Optional[npt.NDArray[np.int32]]
+
+    # for KV cache repositioning (as part of Block-Attention implementation)
+    blocks_to_reposition: list[BlockRepositionRequest]
 
     # KV Cache Connector metadata.
     kv_connector_metadata: Optional[KVConnectorMetadata] = None
