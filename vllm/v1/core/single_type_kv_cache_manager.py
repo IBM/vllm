@@ -269,12 +269,13 @@ class FullAttentionManager(SingleTypeKVCacheManager):
         if dcp_world_size > 1:
             block_size *= dcp_world_size
         max_num_blocks = max_length // block_size
-        for block_hash in itertools.islice(block_hashes, max_num_blocks):
+        for pidx, block_hash in enumerate(
+            itertools.islice(block_hashes, max_num_blocks)):
             # block_hashes is a chain of block hashes. If a block hash is not
             # in the cached_block_hash_to_id, the following block hashes are
             # not computed yet for sure.
             if cached_block := block_pool.get_cached_block(
-                    block_hash, kv_cache_group_ids):
+                    block_hash, kv_cache_group_ids, position=pidx):
                 for computed, cached in zip(computed_blocks, cached_block):
                     computed.append(cached)
             else:
