@@ -1610,16 +1610,15 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             self._repositionings_handler(blocks_to_reposition)
         else:
             bs = 400
-            for i in range(len(blocks_to_reposition) // bs):
-                j = bs if i + bs * 2 < len(
-                    blocks_to_reposition) else i + bs * 2
-                repo_batch = blocks_to_reposition[i:j]
+            for i in range(0, len(blocks_to_reposition), bs):
+                repo_batch = blocks_to_reposition[i:i+bs]
                 self._repositionings_handler(repo_batch)
         if envs.VLLM_V1_SPANS_DEBUG and repo_count > 0:
             torch.cuda.synchronize()
             t_repo = time.time() - ts_repo
             print(f'[SPANS -> gpu_model_runner] repositioning' \
-                  f' speed: {repo_count/t_repo:.2f} (blocks/s)')
+                  f' speed: {repo_count/t_repo:.2f} (blocks/s)'\
+                    f' (total {repo_count})')
 
     @torch.inference_mode()
     def _repositionings_handler(self, blocks_to_reposition):
