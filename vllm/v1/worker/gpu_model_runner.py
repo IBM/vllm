@@ -1646,6 +1646,9 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         [(blocks_to_copy if req.cached_pos == req.prompt_pos
                                          else blocks_to_repo).append(req)
           for req in scheduled_reposition_reqs]
+        if envs.VLLM_V1_SPANS_DISABLE_REPOSITION:
+            blocks_to_copy.extend(blocks_to_repo)
+            blocks_to_repo = []
         newreqs_by_id = {r.req_id: r for r
                          in
                          scheduler_output.scheduled_new_reqs + \
@@ -1719,9 +1722,8 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                                          dest_ids)
         else:
             bs = 400
-            for i in range(len(valid_blocks_to_reposition) // bs):
-                j = bs if i + bs * 2 < len(
-                    valid_blocks_to_reposition) else i + bs * 2
+            for i in range(0, len(valid_blocks_to_reposition), bs):
+                j = i+bs
                 repo_batch = valid_blocks_to_reposition[i:j]
                 dest_batch = dest_ids[i:j]
                 self._repositionings_handler(repo_batch,
@@ -1741,7 +1743,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                 f'[SPANS -> gpu_model_runner] ' \
                     f'reposition block count: {num_repos}'
             )
-        if not envs.VLLM_V1_SPANS_DISABLE_REPOSITION and num_repos > 0:
+        if num_repos > 0:
             kvc_positions = torch.tensor(
                 [d.cached_pos for d in blocks_to_reposition],
                 dtype=torch.long,
