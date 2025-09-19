@@ -44,6 +44,7 @@ from vllm.model_executor.models.interfaces import (is_mixture_of_experts,
                                                    supports_transcription)
 from vllm.model_executor.models.interfaces_base import (
     VllmModelForPooling, is_pooling_model, is_text_generation_model)
+from vllm.model_executor.models.utils import PPMissingLayer
 from vllm.multimodal import MULTIMODAL_REGISTRY
 from vllm.multimodal.inputs import (BatchedTensorInputs, MultiModalKwargsItem,
                                     PlaceholderRange)
@@ -1587,6 +1588,112 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             kv_connector_output=kv_connector_output,
         )
 
+    def _perform_repositioning(self,
+                               scheduler_output: "SchedulerOutput") -> None:
+        """
+        Repositions KV cache blocks based on the scheduler's instructions.
+
+        This method handles the repositioning of attention block
+        vectors in the KV cache when their positions in the KV cache
+        and in the prompt differ. It applies rotary embedding
+        transformations to adjust the positions.
+
+        Args:
+            scheduler_output: The output from the scheduler containing blocks
+                            to reposition.
+        """
+        blocks_to_reposition = scheduler_output.blocks_to_reposition
+        if envs.VLLM_V1_SPANS_DEBUG:
+            ts_repo = time.time()
+            repo_count = len(blocks_to_reposition)
+        if len(blocks_to_reposition) < 600:
+            self._repositionings_handler(blocks_to_reposition)
+        else:
+            bs = 400
+            for i in range(0, len(blocks_to_reposition), bs):
+                repo_batch = blocks_to_reposition[i:i+bs]
+                self._repositionings_handler(repo_batch)
+        if envs.VLLM_V1_SPANS_DEBUG and repo_count > 0:
+            torch.cuda.synchronize()
+            t_repo = time.time() - ts_repo
+            print(f'[SPANS -> gpu_model_runner] repositioning' \
+                  f' speed: {repo_count/t_repo:.2f} (blocks/s)'\
+                    f' (total {repo_count})')
+
+    @torch.inference_mode()
+    def _repositionings_handler(self, blocks_to_reposition):
+        num_repos = len(blocks_to_reposition)
+        if envs.VLLM_V1_SPANS_DEBUG and num_repos > 0:
+            print(
+                f'[SPANS -> gpu_model_runner] ' \
+                    f'reposition block count: {num_repos}'
+            )
+        if not envs.VLLM_V1_SPANS_DISABLE_REPOSITION and num_repos > 0:
+            kvc_positions = torch.tensor(
+                [d.kvc_pos for d in blocks_to_reposition],
+                dtype=torch.long,
+                device=self.kv_caches[0].device).unsqueeze(-1)
+            prt_positions = torch.tensor(
+                [d.prompt_pos for d in blocks_to_reposition],
+                dtype=torch.long,
+                device=self.kv_caches[0].device).unsqueeze(-1)
+            block_ids = torch.tensor(
+                [d.block_id for d in blocks_to_reposition],
+                dtype=torch.long,
+                device=self.kv_caches[0].device)
+
+            # (self.kv_caches shape):
+            # [nlay, kv, maxblocks, blocksize, headcount, headsize]
+            concerned_vectors = [
+                x[0, block_ids, :, :, :] for x in self.kv_caches
+            ]  # -> [nlay, blockids, blocksize, headcount, headsize]
+            bids, bsize, hcount, hsize = concerned_vectors[0].shape
+
+            template_tensor = torch.arange(
+                bsize, dtype=torch.long,
+                device=self.kv_caches[0].device).unsqueeze(0)
+            pos_depos = kvc_positions + template_tensor
+            pos_repos = prt_positions + template_tensor
+
+            # precision highly affects the outputs
+            PRECISION = torch.float32
+            DEF_PRECISION = self.kv_caches[0].dtype
+
+            # do the rotation
+            # note: PPMissingLayer is for pipeline parallel support
+            if not hasattr(self, 'rotate'):
+                if not isinstance(self.model.model.layers[0], PPMissingLayer):
+                    self.rotate = self.model.model.layers[
+                        0].self_attn.rotary_emb
+                else:
+                    for lay in self.model.model.layers:
+                        if not isinstance(lay, PPMissingLayer):
+                            self.rotate = lay.self_attn.rotary_emb
+                            break
+            assert pos_depos.shape[0] == concerned_vectors[0].shape[0]
+
+            if num_repos > 100:
+                for i, k_vectors in enumerate(concerned_vectors):
+                    k_vectors_tmp, _ = self.rotate.forward_native(
+                        pos_depos,
+                        k_vectors.to(PRECISION),
+                        invert_rotation_angle=True)
+                    k_vectors_tmp, _ = self.rotate.forward_native(
+                        pos_repos, k_vectors_tmp)
+                    self.kv_caches[i][0, block_ids, ...] = \
+                        k_vectors_tmp.to(DEF_PRECISION)
+            else:
+                k_vectors_tmp, _ = self.rotate.forward_native(
+                    pos_depos,
+                    torch.cat([k.unsqueeze(0) for k in concerned_vectors],
+                              dim=0).to(PRECISION),
+                    invert_rotation_angle=True)
+                k_vectors_tmp, _ = self.rotate.forward_native(
+                    pos_repos, k_vectors_tmp)
+                for i in range(len(self.kv_caches)):
+                    self.kv_caches[i][0, block_ids, ...] = \
+                        k_vectors_tmp[i].to(DEF_PRECISION)
+
     def _preprocess(
         self,
         scheduler_output: "SchedulerOutput",
@@ -1850,6 +1957,10 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         intermediate_tensors: Optional[IntermediateTensors] = None,
     ) -> Union[ModelRunnerOutput, AsyncModelRunnerOutput, IntermediateTensors]:
         with record_function_or_nullcontext("Preprocess"):
+
+            # handle repositioning requests
+            self._perform_repositioning(scheduler_output)
+
             self._update_states(scheduler_output)
             if not scheduler_output.total_num_scheduled_tokens:
                 if not has_kv_transfer_group():

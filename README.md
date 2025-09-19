@@ -16,6 +16,12 @@ Easy, fast, and cheap LLM serving for everyone
 
 ---
 
+## What is the purpose of this fork?
+
+This is a fork of vLLM which we are using to develop support for *span semantics*.
+
+---
+
 *Latest News* 🔥
 
 - [2025/08] We hosted [vLLM Shenzhen Meetup](https://mp.weixin.qq.com/s/k8ZBO1u2_2odgiKWH_GVTQ) focusing on the ecosystem around vLLM! Please find the meetup slides [here](https://drive.google.com/drive/folders/1Ua2SVKVSu-wp5vou_6ElraDt2bnKhiEA).
