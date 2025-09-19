@@ -390,7 +390,7 @@ class Scheduler(SchedulerInterface):
                         blocks_to_reposition.extend(
                             new_computed_blocks.blocks_to_reposition)
                     
-                    # TODO find something smarter to do than this
+                    # TODO (Nathan) find something smarter to do than this
                     token_budget += \
                         len(new_computed_blocks.blocks_to_reposition) \
                         * self.block_size
