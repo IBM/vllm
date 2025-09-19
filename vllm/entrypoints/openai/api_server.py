@@ -665,6 +665,97 @@ async def cancel_responses(response_id: str, raw_request: Request):
     return JSONResponse(content=response.model_dump())
 
 
+if envs.VLLM_V1_SPANS_ENABLED:
+    import spnl
+    import time
+    from fastapi import Body
+    from vllm import SamplingParams
+    from vllm.inputs import TokensPrompt
+    from vllm.outputs import RequestOutput
+    from vllm.entrypoints.openai.protocol import (ChatMessage,ChatCompletionResponseChoice,UsageInfo)
+    spnl_state = spnl.init(10)
+    PAD_TOKEN = 27
+    PLUS_TOKEN = envs.VLLM_V1_SPANS_TOKEN_PLUS if envs.VLLM_V1_SPANS_TOKEN_PLUS >= 0 else None
+    CROSS_TOKEN = envs.VLLM_V1_SPANS_TOKEN_CROSS if envs.VLLM_V1_SPANS_TOKEN_CROSS >= 0 else None
+    def wrap(prompt: str | list[str]) -> TokensPrompt:
+        if isinstance(prompt[0], list):
+            return [TokensPrompt(prompt_token_ids=p) for p in prompt]
+        return TokensPrompt(prompt_token_ids=prompt)
+    @router.post("/v1/query/prepare")
+    @with_cancellation
+    @load_aware_call
+    async def prepare_query(raw_request: Request,
+                            query: str = Body(..., media_type="text/plain")):
+        docs = [wrap(doc) for doc in spnl.tokenize_prepare(
+            spnl_state,
+            query,
+            True, # we need to preload the prefix of the plus/independent spans
+            PAD_TOKEN,
+            PLUS_TOKEN,
+            raw_request.app.state.vllm_config.cache_config.block_size
+        )]
+        logger.debug(f"/v1/query/prepare {len(docs)} {docs}")
+
+        request_id = raw_request.headers.get(
+            "X-Request-Id") or uuid.uuid4().hex
+        client = engine_client(raw_request)
+        generators = [client.generate(doc, SamplingParams(temperature=0,max_tokens=1), request_id) for doc in docs]
+        for generator in generators:
+            async for res in generator:
+                final = res.outputs[0]
+
+        return JSONResponse(content={"success": True})
+
+    @router.post("/v1/query/execute")
+    @with_cancellation
+    @load_aware_call
+    async def execute_query(raw_request: Request,
+                            query: str = Body(..., media_type="text/plain")):
+        req = spnl.tokenize_query(
+            spnl_state,
+            query,
+            PAD_TOKEN,
+            CROSS_TOKEN,
+            PLUS_TOKEN,
+            raw_request.app.state.vllm_config.cache_config.block_size
+        )
+        logger.debug(f"/v1/query/execute {req.messages}")
+
+        request_id = raw_request.headers.get(
+            "X-Request-Id") or uuid.uuid4().hex
+        client = engine_client(raw_request)
+        generator = client.generate(wrap(req.messages), SamplingParams(temperature=req.temperature if req.temperature is not None else 0,max_tokens=req.max_tokens if req.max_tokens is not None and req.max_tokens != 0 else 2048), request_id)
+
+        # TODO streaming output...
+        final_res: Optional[RequestOutput] = None
+        async for res in generator:
+            final_res = res
+        final = final_res.outputs[0]
+        choices = [
+            ChatCompletionResponseChoice(
+                index=0,
+                message=ChatMessage(role="assistant", content=final.text),
+                logprobs=final.logprobs,
+                finish_reason=final.finish_reason,
+                stop_reason=final.stop_reason,
+            )
+        ]
+        num_prompt_tokens=0 # TODO
+        num_generated_tokens=0 # TODO
+        usage = UsageInfo(prompt_tokens=num_prompt_tokens,
+                          completion_tokens=num_generated_tokens,
+                          total_tokens=num_prompt_tokens +
+                          num_generated_tokens)
+        response = ChatCompletionResponse(
+            id=request_id,
+            created=int(time.time()),
+            model=req.model,
+            choices=choices,
+            usage=usage
+        )
+
+        return JSONResponse(content=response.model_dump())
+
 @router.post("/v1/chat/completions",
              dependencies=[Depends(validate_json_request)],
              responses={
