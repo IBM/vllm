@@ -1614,7 +1614,6 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
     def _custom_cache_manipulations(self,
                                     scheduler_output: "SchedulerOutput") \
                                         -> None:
-        
         # only allow as many reposition requests
         # as a request has tokens scheduled
         for req in scheduler_output.blocks_to_reposition:
@@ -1791,6 +1790,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                             break
             assert pos_depos.shape[0] == concerned_vectors[0].shape[0]
 
+
             if num_repos > 100:
                 for i, k_vectors in enumerate(concerned_vectors):
                     k_vectors_tmp, _ = self.rotate.forward_native(
@@ -1798,19 +1798,23 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                         k_vectors.to(PRECISION),
                         invert_rotation_angle=True)
                     k_vectors_tmp, _ = self.rotate.forward_native(
-                        pos_repos, k_vectors_tmp)
+                       pos_repos, k_vectors_tmp)
                     self.kv_caches[i][0, dest_block_ids, ...] = \
                         k_vectors_tmp.to(DEF_PRECISION)
                     self.kv_caches[i][1, dest_block_ids, ...] = \
                         self.kv_caches[i][1, block_ids]
             else:
+                nlays = len(concerned_vectors)
+                kvecs = torch.cat(concerned_vectors, dim=0).to(PRECISION)
                 k_vectors_tmp, _ = self.rotate.forward_native(
-                    pos_depos,
-                    torch.cat([k.unsqueeze(0) for k in concerned_vectors],
-                              dim=0).to(PRECISION),
+                    pos_depos.repeat(nlays, 1),
+                    kvecs,
                     invert_rotation_angle=True)
                 k_vectors_tmp, _ = self.rotate.forward_native(
-                    pos_repos, k_vectors_tmp)
+                    pos_repos.repeat(nlays, 1),
+                    k_vectors_tmp)
+                k_vectors_tmp = k_vectors_tmp.reshape(nlays,
+                                                      *concerned_vectors[0].shape)
                 for i in range(len(self.kv_caches)):
                     self.kv_caches[i][0, dest_block_ids, ...] = \
                         k_vectors_tmp[i].to(DEF_PRECISION)
