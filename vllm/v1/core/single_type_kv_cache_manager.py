@@ -275,7 +275,8 @@ class FullAttentionManager(SingleTypeKVCacheManager):
             # in the cached_block_hash_to_id, the following block hashes are
             # not computed yet for sure.
             if cached_block := block_pool.get_cached_block(
-                    block_hash, kv_cache_group_ids, position=pidx):
+                    block_hash, kv_cache_group_ids,
+                    position=pidx*kv_cache_spec.block_size):
                 for computed, cached in zip(computed_blocks, cached_block):
                     computed.append(cached)
             else:
