@@ -193,37 +193,38 @@ class KVCacheManager:
             self.coordinator.find_longest_cache_hit(request.block_hashes,
                                                     max_cache_hit_length))
 
-        # now we check how many of those computed blocks have incorrect or are
-        # after an incorrect position match
-        # our own positions are clear, now we need to compare that to cached
-        # positions
         repo_reqs = []
-        non_match_idx = -1
-        non_match_found = False
-        for i, block in enumerate(computed_blocks[0]):
-            if block.is_null: # null blocks don't have meaningful position
-                continue
-            prompt_pos = self.block_size * i
-            cached_pos = block.position
-            # find first block id where pos didn't match
-            if prompt_pos != cached_pos and not non_match_found:
-                non_match_found = True
-                non_match_idx = i
-            # record from then on and after, repo requests
+        if envs.VLLM_V1_SPANS_ENABLED:
+            # now we check how many of those computed blocks have incorrect or are
+            # after an incorrect position match
+            # our own positions are clear, now we need to compare that to cached
+            # positions
+            non_match_idx = -1
+            non_match_found = False
+            for i, block in enumerate(computed_blocks[0]):
+                if block.is_null: # null blocks don't have meaningful position
+                    continue
+                prompt_pos = self.block_size * i
+                cached_pos = block.position
+                # find first block id where pos didn't match
+                if prompt_pos != cached_pos and not non_match_found:
+                    non_match_found = True
+                    non_match_idx = i
+                # record from then on and after, repo requests
+                if non_match_found:
+                    repo_reqs.append(
+                        BlockRepositionRequest(
+                            prompt_pos,
+                            cached_pos,
+                            block.block_id,
+                            i,
+                            request.request_id))
+            # if any repo is needed, we need to exclude that from the
+            # computed blocks and num_new_computed_tokens, so that
+            # new blocks get allocated that we can copy kv values to
             if non_match_found:
-                repo_reqs.append(
-                    BlockRepositionRequest(
-                        prompt_pos,
-                        cached_pos,
-                        block.block_id,
-                        i,
-                        request.request_id))
-        # if any repo is needed, we need to exclude that from the
-        # computed blocks and num_new_computed_tokens, so that
-        # new blocks get allocated that we can copy kv values to
-        if non_match_found:
-            computed_blocks = (computed_blocks[0][:non_match_idx],)
-            num_new_computed_tokens = len(computed_blocks[0]) * self.block_size
+                computed_blocks = (computed_blocks[0][:non_match_idx],)
+                num_new_computed_tokens = len(computed_blocks[0]) * self.block_size
         
         
         if envs.VLLM_V1_SPANS_DEBUG:
