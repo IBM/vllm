@@ -1606,10 +1606,8 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         if envs.VLLM_V1_SPANS_DEBUG:
             ts_repo = time.time()
             repo_count = len(blocks_to_reposition)
-        if len(blocks_to_reposition) < 600:
-            self._repositionings_handler(blocks_to_reposition)
-        else:
-            bs = 400
+        if len(blocks_to_reposition) > 0:
+            bs = 512
             for i in range(0, len(blocks_to_reposition), bs):
                 repo_batch = blocks_to_reposition[i:i+bs]
                 self._repositionings_handler(repo_batch)
@@ -1628,7 +1626,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                 f'[SPANS -> gpu_model_runner] ' \
                     f'reposition block count: {num_repos}'
             )
-        if not envs.VLLM_V1_SPANS_DISABLE_REPOSITION and num_repos > 0:
+        if not envs.VLLM_V1_SPANS_DISABLE_REPOSITION:
             kvc_positions = torch.tensor(
                 [d.kvc_pos for d in blocks_to_reposition],
                 dtype=torch.long,
@@ -1679,17 +1677,21 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                         k_vectors.to(PRECISION),
                         invert_rotation_angle=True)
                     k_vectors_tmp, _ = self.rotate.forward_native(
-                        pos_repos, k_vectors_tmp)
+                       pos_repos, k_vectors_tmp)
                     self.kv_caches[i][0, block_ids, ...] = \
                         k_vectors_tmp.to(DEF_PRECISION)
             else:
+                nlays = len(concerned_vectors)
+                kvecs = torch.cat(concerned_vectors, dim=0).to(PRECISION)
                 k_vectors_tmp, _ = self.rotate.forward_native(
-                    pos_depos,
-                    torch.cat([k.unsqueeze(0) for k in concerned_vectors],
-                              dim=0).to(PRECISION),
+                    pos_depos.repeat(nlays, 1),
+                    kvecs,
                     invert_rotation_angle=True)
                 k_vectors_tmp, _ = self.rotate.forward_native(
-                    pos_repos, k_vectors_tmp)
+                    pos_repos.repeat(nlays, 1),
+                    k_vectors_tmp)
+                k_vectors_tmp = k_vectors_tmp.reshape(nlays,
+                                                      *concerned_vectors[0].shape)
                 for i in range(len(self.kv_caches)):
                     self.kv_caches[i][0, block_ids, ...] = \
                         k_vectors_tmp[i].to(DEF_PRECISION)
