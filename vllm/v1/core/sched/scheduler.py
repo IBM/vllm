@@ -389,6 +389,11 @@ class Scheduler(SchedulerInterface):
                         len(new_computed_blocks.blocks_to_reposition) > 0:
                         blocks_to_reposition.extend(
                             new_computed_blocks.blocks_to_reposition)
+                    
+                    # TODO (Nathan) find something smarter to do than this
+                    token_budget += \
+                        len(new_computed_blocks.blocks_to_reposition) \
+                        * self.block_size
 
                     # Get externally-cached tokens if using a KVConnector.
                     if self.connector is not None:
@@ -545,8 +550,10 @@ class Scheduler(SchedulerInterface):
             self.waiting.prepend_requests(skipped_waiting_requests)
 
         # Check if the scheduling constraints are satisfied.
+        # TODO make this smarter for spans
         total_num_scheduled_tokens = sum(num_scheduled_tokens.values())
-        assert total_num_scheduled_tokens <= self.max_num_scheduled_tokens
+        assert total_num_scheduled_tokens <= self.max_num_scheduled_tokens + \
+            len(blocks_to_reposition) * self.block_size
         assert token_budget >= 0
         assert len(self.running) <= self.max_num_running_reqs
         # Since some requests in the RUNNING queue may not be scheduled in
