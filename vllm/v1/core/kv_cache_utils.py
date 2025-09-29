@@ -372,6 +372,7 @@ class FreeKVCacheBlockQueue:
         """
         if len(blocks) == 0:
             return
+        blocks = list({b.block_id: b for b in blocks}.values())
         self.num_free_blocks += len(blocks)
 
         last_block = self.fake_free_list_tail.prev_free_block

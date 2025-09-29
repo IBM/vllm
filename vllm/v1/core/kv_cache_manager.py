@@ -18,9 +18,11 @@ logger = init_logger(__name__)
 
 @dataclass
 class BlockRepositionRequest:
-    block_id: int
-    kvc_pos: int
     prompt_pos: int
+    cached_pos: int
+    cached_blockid: int
+    prompt_blockpos: int
+    prompt_reqid: str
 
 
 @dataclass
@@ -190,13 +192,48 @@ class KVCacheManager:
         computed_blocks, num_new_computed_tokens = (
             self.coordinator.find_longest_cache_hit(request.block_hashes,
                                                     max_cache_hit_length))
+
+        repo_reqs = []
+        if envs.VLLM_V1_SPANS_ENABLED:
+            # now we check how many of those computed blocks have incorrect or are
+            # after an incorrect position match
+            # our own positions are clear, now we need to compare that to cached
+            # positions
+            non_match_idx = -1
+            non_match_found = False
+            for i, block in enumerate(computed_blocks[0]):
+                if block.is_null: # null blocks don't have meaningful position
+                    continue
+                prompt_pos = self.block_size * i
+                cached_pos = block.position
+                # find first block id where pos didn't match
+                if prompt_pos != cached_pos and not non_match_found:
+                    non_match_found = True
+                    non_match_idx = i
+                # record from then on and after, repo requests
+                if non_match_found:
+                    repo_reqs.append(
+                        BlockRepositionRequest(
+                            prompt_pos,
+                            cached_pos,
+                            block.block_id,
+                            i,
+                            request.request_id))
+            # if any repo is needed, we need to exclude that from the
+            # computed blocks and num_new_computed_tokens, so that
+            # new blocks get allocated that we can copy kv values to
+            if non_match_found:
+                computed_blocks = (computed_blocks[0][:non_match_idx],)
+                num_new_computed_tokens = len(computed_blocks[0]) * self.block_size
+        
+        
         if envs.VLLM_V1_SPANS_DEBUG:
             print(
                 "[SPANS -> kv_cache_manager] here's the blocks hashed in " \
                     "this request:",
-                [str(abs(b.hash_value))[:4] for b in request.block_hashes])
+                [str(b)[-4:] for b in request.block_hashes])
             kvcache_contents = [
-                str(abs(b.block_hash.block_hash.hash_value))[:4]
+                str(b.block_hash)[-4:]
                 if b.block_hash else None for b in self.block_pool.blocks
                 if b._block_hash
             ]
@@ -212,35 +249,17 @@ class KVCacheManager:
                 "[SPANS -> kv_cache_manager] here's the number of blocks " \
                     "that hit the cache:",
                 [
-                    str(abs(b.block_hash.block_hash.hash_value))[:4]
+                    str(b.block_hash)[-4:]
                     if b.block_hash else None for b in computed_blocks[0]
                 ])
-
-        blocks_to_reposition = []
-        if envs.VLLM_V1_SPANS_ENABLED:
-            # Spans does yet not support hybrid models
-            assert len(computed_blocks) == 1
-            for i, b in enumerate(computed_blocks[0]):
-                prompt_pos = i * 16
-                kvc_pos = b.position
-                if envs.VLLM_V1_SPANS_DEBUG:
-                    print(
-                        f"[SPANS -> kv_cache_manager] checking block " \
-                        f"{b.block_id} with prompot pos {prompt_pos} " \
-                        f"and kv pos {kvc_pos}"
-                    )
-                assert isinstance(kvc_pos, int)
-                if kvc_pos != prompt_pos:
-                    if envs.VLLM_V1_SPANS_DEBUG:
-                        print(
-                            f"[SPANS -> kv_cache_manager] from pos: {kvc_pos} "\
-                            f"to prompt pos: {prompt_pos} repositioning needed"
-                        )
-
-                    blocks_to_reposition.append(
-                        BlockRepositionRequest(b.block_id, kvc_pos,
-                                               prompt_pos))
-                    b.position = int(prompt_pos)
+            # for block duplication
+            num_repo = len([r for r in repo_reqs
+                            if r.prompt_pos != r.cached_pos])
+            num_copy = len(repo_reqs) - num_repo
+            print(
+                "[SPANS -> kv_cache_manager] here's the number of blocks",
+                f"total: {len(repo_reqs)} to reposition: {num_repo},",
+                f"to copy: {num_copy}")
 
         if self.log_stats:
             assert self.prefix_cache_stats is not None
@@ -248,7 +267,7 @@ class KVCacheManager:
             self.prefix_cache_stats.queries += request.num_tokens
             self.prefix_cache_stats.hits += num_new_computed_tokens
 
-        return KVCacheBlocks(computed_blocks, blocks_to_reposition),\
+        return KVCacheBlocks(computed_blocks, repo_reqs),\
                 num_new_computed_tokens
 
     def allocate_slots(

@@ -85,6 +85,8 @@ from vllm.v1.worker.gpu_input_batch import CachedRequestState, InputBatch
 from vllm.v1.worker.kv_connector_model_runner_mixin import (
     KVConnectorModelRunnerMixin, KVConnectorOutput)
 from vllm.v1.worker.lora_model_runner_mixin import LoRAModelRunnerMixin
+from vllm.v1.core.kv_cache_manager import BlockRepositionRequest
+from vllm.v1.core.sched.output import NewRequestData
 
 from .utils import (AttentionGroup, MultiModalBudget,
                     add_kv_sharing_layers_to_kv_cache_groups, bind_kv_cache,
@@ -377,6 +379,10 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             dtype=torch.int64,
             device="cpu",
             pin_memory=self.pin_memory)
+
+        # self.reposition_request_cache: dict[str, BlockRepositionRequest] = {}
+        self.reposition_request_cache: \
+            defaultdict[str, list[BlockRepositionRequest]] = defaultdict(list)
 
     def _make_buffer(self,
                      *size: Union[int, torch.SymInt],
@@ -1587,9 +1593,100 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             pooler_output=pooler_output,
             kv_connector_output=kv_connector_output,
         )
+    def _copy_blocks(self,
+                     blocks_to_copy: list[BlockRepositionRequest],
+                     newreqs_by_id: dict[str, NewRequestData]) -> None:
+        from_ids = []
+        to_ids = []
+        for req in blocks_to_copy:
+            from_ids.append(req.cached_blockid)
+            # find out the block to copy to
+            # 1. find the relevant new request
+            # 2. then find the block at position prompt_blockpos
+            to_ids.append(newreqs_by_id[req.prompt_reqid]\
+                          .block_ids[0][req.prompt_blockpos])
+        # perform copies
+        args = dict(dtype=torch.long, device=self.kv_caches[0].device)
+        for i in range(len(self.kv_caches)):
+            self.kv_caches[i][:, torch.tensor(to_ids, **args), ...] = \
+                self.kv_caches[i][:, torch.tensor(from_ids, **args), ...]
+
+    def _custom_cache_manipulations(self,
+                                    scheduler_output: "SchedulerOutput") \
+                                        -> None:
+        # only allow as many reposition requests
+        # as a request has tokens scheduled
+        for req in scheduler_output.blocks_to_reposition:
+            self.reposition_request_cache[req.prompt_reqid].append(req)
+        # 1. find out how many repo requests
+        #    we are scheduled to make
+        scheduled_reposition_reqs = []
+        for rid, ntoks in scheduler_output.num_scheduled_tokens.items():
+            cached_rreqs = self.reposition_request_cache[rid]
+            n_cached_rreqs = len(cached_rreqs)
+            if n_cached_rreqs > 0:
+                # take as many as can be scheduled
+                nsched_rreqs = min(
+                    ntoks // self.cache_config.block_size,
+                    n_cached_rreqs)
+                scheduled_reposition_reqs.extend(
+                    cached_rreqs[:nsched_rreqs])
+                if nsched_rreqs < n_cached_rreqs:
+                    self.reposition_request_cache[rid] =\
+                        cached_rreqs[nsched_rreqs:]
+                else:
+                    self.reposition_request_cache[rid] = []
+        # and then we adjust the rest of this function so it only uses
+        # the scheduled repo requests
+
+        # 0. sort requests
+        blocks_to_copy = []
+        blocks_to_repo = []
+        [(blocks_to_copy if req.cached_pos == req.prompt_pos
+                                         else blocks_to_repo).append(req)
+          for req in scheduled_reposition_reqs]
+        if envs.VLLM_V1_SPANS_DISABLE_REPOSITION:
+            blocks_to_copy.extend(blocks_to_repo)
+            blocks_to_repo = []
+        newreqs_by_id = {r.req_id: r for r
+                         in
+                         scheduler_output.scheduled_new_reqs + \
+                        [self.requests[rid] for rid in \
+                            scheduler_output.scheduled_cached_reqs.req_ids]}
+        # 1. perform copies
+        self._copy_blocks(blocks_to_copy, newreqs_by_id)
+        # 2. do repositioning
+        self._perform_repositioning(blocks_to_repo, newreqs_by_id)
+        # 3. adjust relevant counters
+        #    3.1 num_scheduled_tokens
+        req_ntokens_to_skip = defaultdict(lambda: 0)
+        for rreq in scheduled_reposition_reqs:
+            req_ntokens_to_skip[rreq.prompt_reqid] += \
+                self.cache_config.block_size
+                # 16
+        for reqid, ntoks in req_ntokens_to_skip.items():
+            scheduler_output.num_scheduled_tokens[reqid] -= ntoks
+        #    3.2 total_num_scheduled_tokens
+        scheduler_output.total_num_scheduled_tokens -= \
+            len(scheduled_reposition_reqs) \
+                * self.cache_config.block_size
+                        # * 16
+        #    3.3 scheduled_new_reqs (num_computed_tokens)
+        for i in range(len(scheduler_output.scheduled_new_reqs)):
+            sr = scheduler_output.scheduled_new_reqs[i]
+            sr.num_computed_tokens += req_ntokens_to_skip[sr.req_id]
+        scc = scheduler_output.scheduled_cached_reqs
+        for i in range(len(scc.req_ids)):
+            rid = scc.req_ids[i]
+            scc.num_computed_tokens[i] += req_ntokens_to_skip[rid]
+            # NOTE (nathan) maybe PP is broken here because
+            #      we don't manipulate new_token_ids
+            #      in the cached request data
+
 
     def _perform_repositioning(self,
-                               scheduler_output: "SchedulerOutput") -> None:
+                            blocks_to_reposition: list[BlockRepositionRequest],
+                            newreqs_by_id: dict[str, NewRequestData]) -> None:
         """
         Repositions KV cache blocks based on the scheduler's instructions.
 
@@ -1602,99 +1699,121 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             scheduler_output: The output from the scheduler containing blocks
                             to reposition.
         """
-        blocks_to_reposition = scheduler_output.blocks_to_reposition
         if envs.VLLM_V1_SPANS_DEBUG:
             ts_repo = time.time()
             repo_count = len(blocks_to_reposition)
-        if len(blocks_to_reposition) > 0:
+        # figure out destination block IDs
+        dest_ids = []
+        valid_blocks_to_reposition = []
+        for req in blocks_to_reposition:
+            try:
+                dest_ids.append(newreqs_by_id[req.prompt_reqid]\
+                                .block_ids[0][req.prompt_blockpos])
+                valid_blocks_to_reposition.append(req)
+            except IndexError as e:
+                # breakpoint()
+                print('INDEX_ERROR could not run reposition request:', req, e)
+
+        if len(valid_blocks_to_reposition) > 0:
             bs = 512
-            for i in range(0, len(blocks_to_reposition), bs):
-                repo_batch = blocks_to_reposition[i:i+bs]
-                self._repositionings_handler(repo_batch)
+            for i in range(0, len(valid_blocks_to_reposition), bs):
+                j = i+bs
+                repo_batch = valid_blocks_to_reposition[i:j]
+                dest_batch = dest_ids[i:j]
+                self._repositionings_handler(repo_batch,
+                                             dest_batch)
         if envs.VLLM_V1_SPANS_DEBUG and repo_count > 0:
             torch.cuda.synchronize()
             t_repo = time.time() - ts_repo
             print(f'[SPANS -> gpu_model_runner] repositioning' \
-                  f' speed: {repo_count/t_repo:.2f} (blocks/s)'\
-                    f' (total {repo_count})')
+                  f' speed: {repo_count/t_repo:.2f} (blocks/s)')
 
     @torch.inference_mode()
-    def _repositionings_handler(self, blocks_to_reposition):
+    def _repositionings_handler(self, blocks_to_reposition,
+                                destination_block_ids):
         num_repos = len(blocks_to_reposition)
-        if envs.VLLM_V1_SPANS_DEBUG and num_repos > 0:
+        if envs.VLLM_V1_SPANS_DEBUG:
             print(
                 f'[SPANS -> gpu_model_runner] ' \
                     f'reposition block count: {num_repos}'
             )
-        if not envs.VLLM_V1_SPANS_DISABLE_REPOSITION:
-            kvc_positions = torch.tensor(
-                [d.kvc_pos for d in blocks_to_reposition],
-                dtype=torch.long,
-                device=self.kv_caches[0].device).unsqueeze(-1)
-            prt_positions = torch.tensor(
-                [d.prompt_pos for d in blocks_to_reposition],
-                dtype=torch.long,
-                device=self.kv_caches[0].device).unsqueeze(-1)
-            block_ids = torch.tensor(
-                [d.block_id for d in blocks_to_reposition],
-                dtype=torch.long,
-                device=self.kv_caches[0].device)
+        kvc_positions = torch.tensor(
+            [d.cached_pos for d in blocks_to_reposition],
+            dtype=torch.long,
+            device=self.kv_caches[0].device).unsqueeze(-1)
+        prt_positions = torch.tensor(
+            [d.prompt_pos for d in blocks_to_reposition],
+            dtype=torch.long,
+            device=self.kv_caches[0].device).unsqueeze(-1)
+        block_ids = torch.tensor(
+            [d.cached_blockid for d in blocks_to_reposition],
+            dtype=torch.long,
+            device=self.kv_caches[0].device)
+        dest_block_ids = torch.tensor(
+            destination_block_ids,
+            dtype=torch.long,
+            device=self.kv_caches[0].device)
 
-            # (self.kv_caches shape):
-            # [nlay, kv, maxblocks, blocksize, headcount, headsize]
-            concerned_vectors = [
-                x[0, block_ids, :, :, :] for x in self.kv_caches
-            ]  # -> [nlay, blockids, blocksize, headcount, headsize]
-            bids, bsize, hcount, hsize = concerned_vectors[0].shape
+        # (self.kv_caches shape):
+        # [nlay, kv, maxblocks, blocksize, headcount, headsize]
+        concerned_vectors = [
+            x[0, block_ids, :, :, :] for x in self.kv_caches
+        ]  # -> [nlay, blockids, blocksize, headcount, headsize]
+        bids, bsize, hcount, hsize = concerned_vectors[0].shape
 
-            template_tensor = torch.arange(
-                bsize, dtype=torch.long,
-                device=self.kv_caches[0].device).unsqueeze(0)
-            pos_depos = kvc_positions + template_tensor
-            pos_repos = prt_positions + template_tensor
+        template_tensor = torch.arange(
+            bsize, dtype=torch.long,
+            device=self.kv_caches[0].device).unsqueeze(0)
+        pos_depos = kvc_positions + template_tensor
+        pos_repos = prt_positions + template_tensor
 
-            # precision highly affects the outputs
-            PRECISION = torch.float32
-            DEF_PRECISION = self.kv_caches[0].dtype
+        # precision highly affects the outputs
+        PRECISION = torch.float32
+        DEF_PRECISION = self.kv_caches[0].dtype
 
-            # do the rotation
-            # note: PPMissingLayer is for pipeline parallel support
-            if not hasattr(self, 'rotate'):
-                if not isinstance(self.model.model.layers[0], PPMissingLayer):
-                    self.rotate = self.model.model.layers[
-                        0].self_attn.rotary_emb
-                else:
-                    for lay in self.model.model.layers:
-                        if not isinstance(lay, PPMissingLayer):
-                            self.rotate = lay.self_attn.rotary_emb
-                            break
-            assert pos_depos.shape[0] == concerned_vectors[0].shape[0]
-
-            if num_repos > 100:
-                for i, k_vectors in enumerate(concerned_vectors):
-                    k_vectors_tmp, _ = self.rotate.forward_native(
-                        pos_depos,
-                        k_vectors.to(PRECISION),
-                        invert_rotation_angle=True)
-                    k_vectors_tmp, _ = self.rotate.forward_native(
-                       pos_repos, k_vectors_tmp)
-                    self.kv_caches[i][0, block_ids, ...] = \
-                        k_vectors_tmp.to(DEF_PRECISION)
+        # do the rotation
+        # note: PPMissingLayer is for pipeline parallel support
+        if not hasattr(self, 'rotate'):
+            if not isinstance(self.model.model.layers[0], PPMissingLayer):
+                self.rotate = self.model.model.layers[
+                    0].self_attn.rotary_emb
             else:
-                nlays = len(concerned_vectors)
-                kvecs = torch.cat(concerned_vectors, dim=0).to(PRECISION)
+                for lay in self.model.model.layers:
+                    if not isinstance(lay, PPMissingLayer):
+                        self.rotate = lay.self_attn.rotary_emb
+                        break
+        assert pos_depos.shape[0] == concerned_vectors[0].shape[0]
+
+
+        if num_repos > 100:
+            for i, k_vectors in enumerate(concerned_vectors):
                 k_vectors_tmp, _ = self.rotate.forward_native(
-                    pos_depos.repeat(nlays, 1),
-                    kvecs,
+                    pos_depos,
+                    k_vectors.to(PRECISION),
                     invert_rotation_angle=True)
                 k_vectors_tmp, _ = self.rotate.forward_native(
-                    pos_repos.repeat(nlays, 1),
-                    k_vectors_tmp)
-                k_vectors_tmp = k_vectors_tmp.reshape(nlays,
-                                                      *concerned_vectors[0].shape)
-                for i in range(len(self.kv_caches)):
-                    self.kv_caches[i][0, block_ids, ...] = \
-                        k_vectors_tmp[i].to(DEF_PRECISION)
+                    pos_repos, k_vectors_tmp)
+                self.kv_caches[i][0, dest_block_ids, ...] = \
+                    k_vectors_tmp.to(DEF_PRECISION)
+                self.kv_caches[i][1, dest_block_ids, ...] = \
+                    self.kv_caches[i][1, block_ids]
+        else:
+            nlays = len(concerned_vectors)
+            kvecs = torch.cat(concerned_vectors, dim=0).to(PRECISION)
+            k_vectors_tmp, _ = self.rotate.forward_native(
+                pos_depos.repeat(nlays, 1),
+                kvecs,
+                invert_rotation_angle=True)
+            k_vectors_tmp, _ = self.rotate.forward_native(
+                pos_repos.repeat(nlays, 1),
+                k_vectors_tmp)
+            k_vectors_tmp = k_vectors_tmp.reshape(nlays,
+                                                    *concerned_vectors[0].shape)
+            for i in range(len(self.kv_caches)):
+                self.kv_caches[i][0, dest_block_ids, ...] = \
+                    k_vectors_tmp[i].to(DEF_PRECISION)
+                self.kv_caches[i][1, dest_block_ids, ...] = \
+                    self.kv_caches[i][1, block_ids]
 
     def _preprocess(
         self,
@@ -1961,7 +2080,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         with record_function_or_nullcontext("Preprocess"):
 
             # handle repositioning requests
-            self._perform_repositioning(scheduler_output)
+            self._custom_cache_manipulations(scheduler_output)
 
             self._update_states(scheduler_output)
             if not scheduler_output.total_num_scheduled_tokens:

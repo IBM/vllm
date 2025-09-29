@@ -73,9 +73,17 @@ class BlockPool:
         self.enable_kv_cache_events = enable_kv_cache_events
         self.kv_event_queue: list[KVCacheEvent] = []
 
+    def _closest_cache_hit(
+            self, cached_blocks: dict[int, KVCacheBlock],
+            position: int,
+    ) -> dict[int, KVCacheBlock]:
+        return min(list(cached_blocks.values()),
+                   key=lambda x: abs(x.position - position))
+
     def get_cached_block(
             self, block_hash: BlockHash,
-            kv_cache_group_ids: list[int]) -> Optional[list[KVCacheBlock]]:
+            kv_cache_group_ids: list[int],
+            position: Optional[int] = None) -> Optional[list[KVCacheBlock]]:
         """Get the cached block by the block hash for each group in 
         `kv_cache_group_ids`, or None if cache miss for any group.
         If there are duplicated blocks, we return the first block in the cache.
@@ -95,7 +103,11 @@ class BlockPool:
                 block_hash_with_group_id)
             if not cached_blocks_one_group:
                 return None
-            first_block = next(iter(cached_blocks_one_group.values()))
+            if position is not None and len(cached_blocks_one_group) > 1:
+                first_block = self._closest_cache_hit(cached_blocks_one_group,
+                                                      position)
+            else:
+                first_block = next(iter(cached_blocks_one_group.values()))
             cached_blocks.append(first_block)
         return cached_blocks
 
@@ -193,17 +205,19 @@ class BlockPool:
             debug logging that prints each block's tokens, to help
             debug span-related workflows.
         """
+        dbg = envs.VLLM_V1_SPANS_DEBUG
         pos = 0
+        nfb_ids = {b.block_id for b in new_full_blocks}
         for blk in blocks:
-            if blk in new_full_blocks:
+            if blk.block_id in nfb_ids:
                 blk.position = pos
-                if envs.VLLM_V1_SPANS_DEBUG:
+                if dbg:
                     # this prints the tokens assigned to a new block
                     # in the KV cache
                     blk_tks = request.all_token_ids[pos:pos + 16]
                     assert blk.block_hash is not None
-                    bhash = str(abs(blk.block_hash.block_hash.hash_value)
-                                )[:4] if blk.block_hash.block_hash else None
+                    bhash = str(blk.block_hash
+                                )[:4] if blk.block_hash else None
                     print('[SPANS -> block_pool] assigning to pos', pos,
                           'with hash', bhash, 'block: ', blk_tks)
             pos += 16
