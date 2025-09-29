@@ -77,9 +77,8 @@ class BlockPool:
             self, cached_blocks: dict[int, KVCacheBlock],
             position: int,
     ) -> dict[int, KVCacheBlock]:
-        return sorted(
-            list(cached_blocks.values()),
-            key=lambda x: abs(x.position - position))[0]
+        return min(list(cached_blocks.values()),
+                   key=lambda x: abs(x.position - position))
 
     def get_cached_block(
             self, block_hash: BlockHash,
@@ -206,11 +205,13 @@ class BlockPool:
             debug logging that prints each block's tokens, to help
             debug span-related workflows.
         """
+        dbg = envs.VLLM_V1_SPANS_DEBUG
         pos = 0
+        nfb_ids = {b.block_id for b in new_full_blocks}
         for blk in blocks:
-            if blk in new_full_blocks:
+            if blk.block_id in nfb_ids:
                 blk.position = pos
-                if envs.VLLM_V1_SPANS_DEBUG:
+                if dbg:
                     # this prints the tokens assigned to a new block
                     # in the KV cache
                     blk_tks = request.all_token_ids[pos:pos + 16]
