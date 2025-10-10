@@ -586,7 +586,7 @@ def hash_block_tokens(
 
 kv_cache_utils_tokenizer = AutoTokenizer\
     .from_pretrained('ldsjmdy/Tulu3-Block-FT')
-def extract_cross_token_range(input_toks):
+def extract_cross_token_range(input_str):
     """
     Extracts the integer from a string that starts with '_', followed by
     an integer, another '_', and then anything else.
@@ -605,7 +605,6 @@ def extract_cross_token_range(input_toks):
     # - .* matches any characters after that (including none)
     # - $ asserts the end of the string
     pattern = r'^_(\d+)_.*$'
-    input_str = kv_cache_utils_tokenizer.decode(input_toks)
     match = re.match(pattern, input_str, re.DOTALL)
     if match:
         return int(match.group(1))  # Convert the captured string to integer
@@ -621,9 +620,9 @@ def recompute_token_handler(
     if envs.VLLM_V1_SPANS_ENABLED and \
             block_tokens[0] == envs.VLLM_V1_SPANS_TOKEN_CROSS:
         tokens_to_include = tokens_up_to_block
-        if kv_cache_utils_tokenizer.decode(block_tokens[1:2]) \
-                == '_':
-            nback = extract_cross_token_range(block_tokens[1:])
+        block_str = kv_cache_utils_tokenizer.decode(block_tokens[1:])
+        if block_str[0] == '_':
+            nback = extract_cross_token_range(block_str)
             tokens_to_include = tokens_up_to_block[-nback:]
             if envs.VLLM_V1_SPANS_DEBUG:
                 print('[SPANS -> kv_cache_utils] cross token',
