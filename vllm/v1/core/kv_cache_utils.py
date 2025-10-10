@@ -19,6 +19,9 @@ from vllm.v1.kv_cache_interface import (ChunkedLocalAttentionSpec,
 from vllm.v1.metrics.stats import PrefixCacheStats
 from vllm.v1.request import Request
 
+from transformers import AutoTokenizer
+import re
+
 # BlockHash represents the hash of a single KV-cache block used for
 # prefix caching.  Treating it as a distinct type from ``bytes`` helps
 # catch accidental misuse when passing around raw byte strings.
@@ -581,14 +584,54 @@ def hash_block_tokens(
         hash_function(
             (parent_block_hash, curr_block_token_ids_tuple, extra_keys)))
 
+kv_cache_utils_tokenizer = AutoTokenizer\
+    .from_pretrained('ldsjmdy/Tulu3-Block-FT')
+def extract_cross_token_range(input_toks):
+    """
+    Extracts the integer from a string that starts with '_', followed by
+    an integer, another '_', and then anything else.
+    
+    Args:
+    input_string (str): The input string to process.
+    
+    Returns:
+    int or None: The extracted integer if the pattern matches, otherwise None.
+    """
+    # The regex pattern:
+    # - ^ asserts the start of the string
+    # - _ matches the first underscore
+    # - (\d+) captures one or more digits (the integer)
+    # - _ matches the second underscore
+    # - .* matches any characters after that (including none)
+    # - $ asserts the end of the string
+    pattern = r'^_(\d+)_.*$'
+    input_str = kv_cache_utils_tokenizer.decode(input_toks)
+    match = re.match(pattern, input_str, re.DOTALL)
+    if match:
+        return int(match.group(1))  # Convert the captured string to integer
+    if envs.VLLM_V1_SPANS_DEBUG:
+        print(f"[SPANS -> kv_cache_utils] cross token did not contain correct number: {input_str}")
+        breakpoint()
+    return None
 
 def recompute_token_handler(
-        block_first_token: int, tokens_up_to_block: list[int],
+        block_tokens: list[int], tokens_up_to_block: list[int],
         extra_keys: Union[tuple[Any, ...],
                           None]) -> Union[tuple[Any, ...], None]:
     if envs.VLLM_V1_SPANS_ENABLED and \
-        block_first_token == envs.VLLM_V1_SPANS_TOKEN_CROSS:
-        tok_tuple = tuple(tokens_up_to_block)
+            block_tokens[0] == envs.VLLM_V1_SPANS_TOKEN_CROSS:
+        tokens_to_include = tokens_up_to_block
+        if kv_cache_utils_tokenizer.decode(block_tokens[1:2]) \
+                == '_':
+            nback = extract_cross_token_range(block_tokens[1:])
+            tokens_to_include = tokens_up_to_block[-nback:]
+            if envs.VLLM_V1_SPANS_DEBUG:
+                print('[SPANS -> kv_cache_utils] cross token',
+                      f'with range detected: range {nback}')
+            if not nback <= len(tokens_up_to_block):
+                breakpoint()
+            assert nback <= len(tokens_up_to_block)
+        tok_tuple = tuple(tokens_to_include)
         extra_keys = (*extra_keys, tok_tuple) if extra_keys \
             else tok_tuple
     return extra_keys
@@ -630,7 +673,7 @@ def get_request_block_hasher(
             # Compute the hash of the current block
             block_tokens = request.all_token_ids[start_token_idx:end_token_idx]
             extra_keys = recompute_token_handler(
-                block_tokens[0], block_tokens[:start_token_idx], extra_keys)
+                block_tokens, request.all_token_ids[:start_token_idx], extra_keys)
             block_hash = hash_block_tokens(caching_hash_fn,
                                            prev_block_hash_value, block_tokens,
                                            extra_keys)
