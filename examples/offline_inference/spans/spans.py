@@ -72,7 +72,7 @@ def main():
     os.environ["VLLM_V1_SPANS_TOKEN_CROSS"] = str(SPAN_TOK_CROSS)
 
     # will print every step of the span process if set to true
-    os.environ["VLLM_V1_SPANS_DEBUG"] = "True"
+    os.environ["VLLM_V1_SPANS_DEBUG"] = "False"
 
     # will disable the adjustment of positional encodings when a KV cache
     # block is loaded to a different position than it was stored

@@ -1422,7 +1422,6 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                         if not isinstance(lay, PPMissingLayer):
                             self.rotate = lay.self_attn.rotary_emb
                             break
-            print(self.rotate)
 
             common_attn_metadata = CommonAttentionMetadata(
                 query_start_loc=query_start_loc,

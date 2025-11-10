@@ -113,12 +113,7 @@ class RotaryEmbedding(RotaryEmbeddingBase):
         num_tokens = positions.shape[0]
         cos_sin = self.cos_sin_cache.index_select(0, positions)
 
-        print("cos_sin: ", cos_sin.shape)
-
         cos, sin = cos_sin.chunk(2, dim=-1)
-
-        print("cos.shape: ", cos.shape)
-        print("sin.shape: ", sin.shape)
 
         if invert_rotation_angle:
             sin = -sin
