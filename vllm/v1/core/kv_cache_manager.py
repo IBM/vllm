@@ -218,7 +218,7 @@ class KVCacheManager:
         if envs.VLLM_V1_SPANS_DEBUG:
             print(
                 "[SPANS -> kv_cache_manager] here's the blocks hashed in this request:",
-                [str(abs(b.hash_value))[:4] for b in request.block_hashes],
+                [str(b)[:4] for b in request.block_hashes],
             )
             kvcache_contents = [
                 str(b.block_hash)[:4] if b.block_hash else None
