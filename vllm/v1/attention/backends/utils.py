@@ -82,6 +82,8 @@ class CommonAttentionMetadata:
     block_table_tensor: torch.Tensor
     slot_mapping: torch.Tensor
 
+    cos_sin_cache: torch.Tensor | None = None
+
     causal: bool = True
 
     # Needed by FastPrefillAttentionBuilder

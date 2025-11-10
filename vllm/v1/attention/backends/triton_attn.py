@@ -59,6 +59,8 @@ class TritonAttentionMetadata:
     prefix_kv_lens: torch.Tensor | None
     suffix_kv_lens: torch.Tensor | None
 
+    cos_sin_cache: torch.Tensor | None = None
+
     # Optional aot scheduling
     scheduler_metadata: torch.Tensor | None = None
     prefix_scheduler_metadata: torch.Tensor | None = None
@@ -141,6 +143,7 @@ class TritonAttentionMetadataBuilder(AttentionMetadataBuilder[TritonAttentionMet
             prefix_kv_lens=prefix_kv_lens,
             suffix_kv_lens=suffix_kv_lens,
             prefix_scheduler_metadata=prefix_scheduler_metadata,
+            cos_sin_cache=common_attn_metadata.cos_sin_cache,
         )
         return attn_metadata
 
@@ -343,6 +346,8 @@ class TritonAttentionImpl(AttentionImpl):
 
         descale_shape = (cu_seqlens_q.shape[0] - 1, key.shape[1])
 
+        cos_sin_cache = attn_metadata.cos_sin_cache
+
         unified_attention(
             q=query[:num_actual_tokens],
             k=key_cache,
@@ -363,6 +368,7 @@ class TritonAttentionImpl(AttentionImpl):
             v_descale=layer._v_scale.expand(descale_shape),
             sinks=self.sinks,
             output_scale=output_scale,
+            cos_sin_cache=cos_sin_cache,
         )
 
         return output

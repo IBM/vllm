@@ -64,6 +64,7 @@ def kernel_unified_attention_2d(
     seq_lens_ptr,  # [num_seqs]
     alibi_slopes_ptr,  # [num_query_heads]
     qq_bias_ptr,  # [num_query_tokens, num_query_tokens]
+    cos_sin_cache_ptr, # [max_model_len, head_size]
     scale,  # float32
     k_scale,  # float32
     v_scale,  # float32
@@ -94,6 +95,8 @@ def kernel_unified_attention_2d(
     stride_v_cache_1: tl.int64,  # int
     stride_v_cache_2: tl.int64,  # int
     stride_v_cache_3: tl.constexpr,  # int
+    stride_cs_cache_0: tl.int64, # int
+    stride_cs_cache_1: tl.constexpr, # int
     query_start_len_ptr,  # [num_seqs+1]
     BLOCK_Q: tl.constexpr,  # int
     num_seqs: tl.int32,
@@ -102,6 +105,8 @@ def kernel_unified_attention_2d(
     FP8_MIN: tl.constexpr = float8_info.min,
     FP8_MAX: tl.constexpr = float8_info.max,
 ):
+
+
     q_block_global_idx = tl.program_id(0)
     kv_head_idx = tl.program_id(1)
 
@@ -128,20 +133,43 @@ def kernel_unified_attention_2d(
 
     query_offset_0 = cur_batch_in_all_start_index + query_pos
     query_offset_1 = kv_head_idx * num_queries_per_kv + offs_m % num_queries_per_kv
-    query_offset = (
+
+    offs_d_new = tl.arange(0, HEAD_SIZE_PADDED // 2)
+
+    query_offset_even = (
         query_offset_0[:, None] * query_stride_0
         + query_offset_1[:, None] * query_stride_1
-        + offs_d[None, :]
+        + 2*offs_d_new[None, :]
+    )
+
+    query_offset_odd = (
+        query_offset_0[:, None] * query_stride_0
+        + query_offset_1[:, None] * query_stride_1
+        + 2*offs_d_new[None, :] + 1
     )
 
     dim_mask = tl.where(offs_d < HEAD_SIZE, 1, 0).to(tl.int1)
+
+    dim_mask_even = tl.where(2*offs_d_new < HEAD_SIZE, 1, 0).to(tl.int1)
+    dim_mask_odd = tl.where((2*offs_d_new+1) < HEAD_SIZE, 1, 0).to(tl.int1)
+
+    dim_mask_a = tl.where(offs_d_new < HEAD_SIZE, 1, 0).to(tl.int1)
+    dim_mask_b = tl.where((HEAD_SIZE_PADDED // 2 + offs_d_new) < HEAD_SIZE, 1, 0).to(tl.int1)
+
     query_mask_0 = tl.where(query_pos < cur_batch_query_len, 1, 0).to(tl.int1)
     query_mask_1 = tl.where(query_offset_1 < num_query_heads, 1, 0).to(tl.int1)
 
-    # Q : (BLOCK_M, HEAD_SIZE_PADDED)
-    Q = tl.load(
-        query_ptr + query_offset,
-        mask=dim_mask[None, :] & query_mask_0[:, None] & query_mask_1[:, None],
+    # Q_1 : (BLOCK_M, HEAD_SIZE_PADDED // 2)
+    Q_1 = tl.load(
+        query_ptr + query_offset_even,
+        mask=dim_mask_even[None, :] & query_mask_0[:, None] & query_mask_1[:, None],
+        other=0.0,
+    )
+
+    # Q_2 : (BLOCK_M, HEAD_SIZE_PADDED // 2)
+    Q_2 = tl.load(
+        query_ptr + query_offset_odd,
+        mask=dim_mask_odd[None, :] & query_mask_0[:, None] & query_mask_1[:, None],
         other=0.0,
     )
 
@@ -225,7 +253,6 @@ def kernel_unified_attention_2d(
         physical_block_idx = tl.load(
             block_tables_ptr + block_table_offset + seq_offset // BLOCK_SIZE
         ).to(tl.int64)
-
         v_offset = (
             physical_block_idx[:, None] * stride_v_cache_0
             + kv_head_idx * stride_v_cache_2
@@ -233,27 +260,81 @@ def kernel_unified_attention_2d(
             + (seq_offset % BLOCK_SIZE)[:, None] * stride_v_cache_1
         )
 
-        k_offset = (
+
+        k_offset_even = (
             physical_block_idx[None, :] * stride_k_cache_0
             + kv_head_idx * stride_k_cache_2
-            + offs_d[:, None] * stride_k_cache_3
+            + 2*offs_d_new[:, None] * stride_k_cache_3
             + (seq_offset % BLOCK_SIZE)[None, :] * stride_k_cache_1
         )
 
-        # K : (HEAD_SIZE, TILE_SIZE)
-        K_load = tl.load(
-            key_cache_ptr + k_offset,
-            mask=dim_mask[:, None] & tile_mask[None, :],
+        k_offset_odd = (
+            physical_block_idx[None, :] * stride_k_cache_0
+            + kv_head_idx * stride_k_cache_2
+            + (2*offs_d_new[:, None]+1) * stride_k_cache_3
+            + (seq_offset % BLOCK_SIZE)[None, :] * stride_k_cache_1
+        )
+
+
+        # K_even : (HEAD_SIZE, TILE_SIZE)
+        K_even_load = tl.load(
+            key_cache_ptr + k_offset_even,
+            mask=dim_mask_even[:, None] & tile_mask[None, :],
             other=0.0,
         )
 
-        if K_load.dtype.is_fp8():
-            if Q.dtype.is_fp8():
-                K = K_load
+        if K_even_load.dtype.is_fp8():
+            if Q_1.dtype.is_fp8():
+                K_even = K_even_load
             else:
-                K = (K_load.to(tl.float32) * tl.load(k_scale)).to(Q.dtype)
+                K_even = (K_even_load.to(tl.float32) * tl.load(k_scale)).to(Q_1.dtype)
         else:
-            K = K_load
+            K_even = K_even_load
+
+
+        # K_odd : (HEAD_SIZE, TILE_SIZE)
+        K_odd_load = tl.load(
+            key_cache_ptr + k_offset_odd,
+            mask=dim_mask_odd[:, None] & tile_mask[None, :],
+            other=0.0,
+        )
+
+        if K_odd_load.dtype.is_fp8():
+            if Q_2.dtype.is_fp8():
+                K_odd = K_odd_load
+            else:
+                K_odd = (K_odd_load.to(tl.float32) * tl.load(k_scale)).to(Q_2.dtype)
+        else:
+            K_odd = K_odd_load
+
+
+        cos_cache_offset = (
+            seq_offset[None, :] * stride_cs_cache_0
+            + offs_d_new[:, None] * stride_cs_cache_1
+        )
+
+        sin_cache_offset = (
+            seq_offset[None, :] * stride_cs_cache_0
+            + (HEAD_SIZE_PADDED // 2 + offs_d_new[:, None]) * stride_cs_cache_1
+        )
+
+        cos = tl.load(
+            cos_sin_cache_ptr + cos_cache_offset,
+            mask=dim_mask_a[:, None] & tile_mask[None, :],
+            other=0.0
+        ).to(K_even.dtype)
+
+        sin = tl.load(
+            cos_sin_cache_ptr + sin_cache_offset,
+            mask=dim_mask_b[:, None] & tile_mask[None, :],
+            other=0.0
+        ).to(K_even.dtype)
+
+        K_rot1 = K_even * cos - K_odd * sin
+        K_rot2 = K_odd * cos + K_even * sin
+
+        #K_rot1 = K_even
+        #K_rot2 = K_odd
 
         # V : (TILE_SIZE, HEAD_SIZE)
         V_load = tl.load(
@@ -274,8 +355,8 @@ def kernel_unified_attention_2d(
 
         # S : (BLOCK_M, TILE_SIZE)
         S = tl.zeros(shape=(BLOCK_M, TILE_SIZE), dtype=tl.float32)
-
-        S += scale * tl.dot(Q, K)
+        S += scale * tl.dot(Q_1, K_rot1)
+        S += scale * tl.dot(Q_2, K_rot2)
 
         if USE_SOFTCAP:
             S = apply_softcap(S, softcap)
@@ -754,7 +835,9 @@ def unified_attention(
     qq_bias=None,
     # Optional tensor for sinks
     sinks=None,
+    cos_sin_cache=None,
 ):
+
     assert causal, "Only causal attention is supported"
     assert q_descale is None, "Q scales not supported"
 
@@ -794,7 +877,9 @@ def unified_attention(
     TILE_SIZE_DECODE = 16 if q.element_size() >= 2 else 32
 
     # if batch contains a prefill
-    if max_seqlen_q > 1 or total_num_q_blocks * num_kv_heads > 128:
+    #if max_seqlen_q > 1 or total_num_q_blocks * num_kv_heads > 128:
+    if True:
+
         kernel_unified_attention_2d[
             (
                 total_num_q_blocks,
@@ -810,6 +895,7 @@ def unified_attention(
             seq_lens_ptr=seqused_k,
             alibi_slopes_ptr=alibi_slopes,
             qq_bias_ptr=qq_bias,
+            cos_sin_cache_ptr=cos_sin_cache,
             scale=softmax_scale,
             k_scale=k_descale,
             v_scale=v_descale,
@@ -840,6 +926,8 @@ def unified_attention(
             stride_v_cache_1=v.stride(1),
             stride_v_cache_2=v.stride(2),
             stride_v_cache_3=v.stride(3),
+            stride_cs_cache_0=cos_sin_cache.stride(0),
+            stride_cs_cache_1=cos_sin_cache.stride(1),
             query_start_len_ptr=cu_seqlens_q,
             BLOCK_Q=BLOCK_Q,
             num_seqs=num_seqs,

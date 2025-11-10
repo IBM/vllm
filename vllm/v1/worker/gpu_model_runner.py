@@ -1413,6 +1413,17 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                 # graph mode.
                 blk_table.slot_mapping.gpu[total_num_scheduled_tokens:].fill_(-1)
 
+            if not hasattr(self, 'rotate'):
+                if not isinstance(self.model.model.layers[0], PPMissingLayer):
+                    self.rotate = self.model.model.layers[
+                        0].self_attn.rotary_emb
+                else:
+                    for lay in self.model.model.layers:
+                        if not isinstance(lay, PPMissingLayer):
+                            self.rotate = lay.self_attn.rotary_emb
+                            break
+            print(self.rotate)
+
             common_attn_metadata = CommonAttentionMetadata(
                 query_start_loc=query_start_loc,
                 query_start_loc_cpu=query_start_loc_cpu,
@@ -1430,6 +1441,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                 causal=True,
                 encoder_seq_lens=encoder_seq_lens,
                 dcp_local_seq_lens=dcp_local_seq_lens,
+                cos_sin_cache=self.rotate.cos_sin_cache
             )
 
             if self.speculative_config and spec_decode_common_attn_metadata is None:
@@ -2639,7 +2651,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         with record_function_or_nullcontext("Preprocess"):
             # NOTE(tdoublep): should this be inside context below?
             # handle repositioning requests
-            self._perform_repositioning(scheduler_output)
+            #self._perform_repositioning(scheduler_output)
 
             with self.synchronize_input_prep():
                 # Update persistent batch states.

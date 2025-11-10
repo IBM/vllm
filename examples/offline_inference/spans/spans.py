@@ -62,7 +62,7 @@ def main():
     # enables block attention
     # -> when this line is not commented, we expect a speedup
     #    in the execution of the last two .generate calls
-    os.environ["VLLM_V1_SPANS_ENABLED"] = "True"
+    os.environ["VLLM_V1_SPANS_ENABLED"] = "False"
 
     # the token that tells vLLM "this is the beginning of a span"
     os.environ["VLLM_V1_SPANS_TOKEN_PLUS"] = str(SPAN_TOK_PLUS)
