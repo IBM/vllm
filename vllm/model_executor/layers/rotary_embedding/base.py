@@ -125,7 +125,7 @@ class RotaryEmbedding(RotaryEmbeddingBase):
         query_rot = apply_rotary_emb_torch(query_rot, cos, sin, self.is_neox_style)
         query = torch.cat((query_rot, query_pass), dim=-1).reshape(query_shape)
 
-        '''
+        """
         # key may be None in some cases, e.g. cross-layer KV sharing
         if key is not None:
             key_shape = key.shape
@@ -134,7 +134,7 @@ class RotaryEmbedding(RotaryEmbeddingBase):
             key_pass = key[..., self.rotary_dim :]
             key_rot = apply_rotary_emb_torch(key_rot, cos, sin, self.is_neox_style)
             key = torch.cat((key_rot, key_pass), dim=-1).reshape(key_shape)
-        '''
+        """
 
         return query, key
 
@@ -144,11 +144,7 @@ class RotaryEmbedding(RotaryEmbeddingBase):
         query: torch.Tensor,
         key: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
-
-        return self.forward_native(positions, query, key)
-
         if self.use_flashinfer:
-            assert False
             torch.ops.vllm.flashinfer_rotary_embedding(
                 positions,
                 query,
@@ -168,7 +164,7 @@ class RotaryEmbedding(RotaryEmbeddingBase):
         ops.rotary_embedding(
             positions,
             query,
-            key,
+            None,
             self.head_size,
             self.cos_sin_cache,
             self.is_neox_style,
