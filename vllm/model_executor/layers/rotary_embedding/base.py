@@ -106,17 +106,12 @@ class RotaryEmbedding(RotaryEmbeddingBase):
         positions: torch.Tensor,
         query: torch.Tensor,
         key: torch.Tensor | None = None,
-        invert_rotation_angle: bool = False,  # <- to unrope kv's
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
         """A PyTorch-native implementation of forward()."""
         positions = positions.flatten()
         num_tokens = positions.shape[0]
         cos_sin = self.cos_sin_cache.index_select(0, positions)
-
         cos, sin = cos_sin.chunk(2, dim=-1)
-
-        if invert_rotation_angle:
-            sin = -sin
 
         query_shape = query.shape
         query = query.view(num_tokens, -1, self.head_size)

@@ -265,7 +265,6 @@ class MRotaryEmbedding(RotaryEmbeddingBase):
         query: torch.Tensor,
         key: torch.Tensor | None = None,
         offsets: torch.Tensor | None = None,
-        invert_rotation_angle: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
         """PyTorch-native implementation equivalent to forward().
 

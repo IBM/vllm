@@ -228,7 +228,6 @@ if TYPE_CHECKING:
     VLLM_V1_SPANS_DEBUG: bool = False
     VLLM_V1_SPANS_TOKEN_PLUS: int = -1
     VLLM_V1_SPANS_TOKEN_CROSS: int = -1
-    VLLM_V1_SPANS_DISABLE_REPOSITION: bool = False
 
 
 def get_default_cache_root():
@@ -1504,11 +1503,6 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "VLLM_V1_SPANS_TOKEN_CROSS": lambda: int(
         os.environ.get("VLLM_V1_SPANS_TOKEN_CROSS", "-1")
     ),
-    # for block-attention, detected spans will be loaded but not repositioned
-    "VLLM_V1_SPANS_DISABLE_REPOSITION": lambda: os.environ.get(
-        "VLLM_V1_SPANS_DISABLE_REPOSITION", "False"
-    )
-    == "True",
 }
 
 # --8<-- [end:env-vars-definition]
