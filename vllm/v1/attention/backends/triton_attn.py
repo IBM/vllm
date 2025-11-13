@@ -7,6 +7,7 @@ from typing import ClassVar
 
 import torch
 
+import vllm.envs as envs
 from vllm.attention.backends.abstract import (
     AttentionBackend,
     AttentionImpl,
@@ -129,6 +130,11 @@ class TritonAttentionMetadataBuilder(AttentionMetadataBuilder[TritonAttentionMet
             suffix_kv_lens = None
             prefix_scheduler_metadata = None
 
+        if envs.VLLM_V1_SPANS_ENABLED:
+            cos_sin_cache = common_attn_metadata.cos_sin_cache
+        else:
+            cos_sin_cache = None
+
         attn_metadata = TritonAttentionMetadata(
             num_actual_tokens=num_actual_tokens,
             max_query_len=max_query_len,
@@ -143,7 +149,7 @@ class TritonAttentionMetadataBuilder(AttentionMetadataBuilder[TritonAttentionMet
             prefix_kv_lens=prefix_kv_lens,
             suffix_kv_lens=suffix_kv_lens,
             prefix_scheduler_metadata=prefix_scheduler_metadata,
-            cos_sin_cache=common_attn_metadata.cos_sin_cache,
+            cos_sin_cache=cos_sin_cache,
         )
         return attn_metadata
 

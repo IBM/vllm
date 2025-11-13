@@ -4,6 +4,7 @@
 
 import torch
 
+import vllm.envs as envs
 from vllm.model_executor.custom_op import CustomOp
 
 from .common import apply_rotary_emb_torch
@@ -120,16 +121,14 @@ class RotaryEmbedding(RotaryEmbeddingBase):
         query_rot = apply_rotary_emb_torch(query_rot, cos, sin, self.is_neox_style)
         query = torch.cat((query_rot, query_pass), dim=-1).reshape(query_shape)
 
-        """
         # key may be None in some cases, e.g. cross-layer KV sharing
-        if key is not None:
+        if key is not None and not envs.VLLM_V1_SPANS_ENABLED:
             key_shape = key.shape
             key = key.view(num_tokens, -1, self.head_size)
             key_rot = key[..., : self.rotary_dim]
             key_pass = key[..., self.rotary_dim :]
             key_rot = apply_rotary_emb_torch(key_rot, cos, sin, self.is_neox_style)
             key = torch.cat((key_rot, key_pass), dim=-1).reshape(key_shape)
-        """
 
         return query, key
 
@@ -159,7 +158,7 @@ class RotaryEmbedding(RotaryEmbeddingBase):
         ops.rotary_embedding(
             positions,
             query,
-            None,
+            None if envs.VLLM_V1_SPANS_ENABLED else key,
             self.head_size,
             self.cos_sin_cache,
             self.is_neox_style,

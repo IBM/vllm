@@ -87,6 +87,7 @@ def kernel_unified_attention_2d(
     USE_SOFTCAP: tl.constexpr,  # bool
     USE_SINKS: tl.constexpr,  # bool
     SLIDING_WINDOW: tl.constexpr,  # int
+    FUSE_ROPE: tl.constexpr,  # bool
     stride_k_cache_0: tl.int64,  # int
     stride_k_cache_1: tl.int64,  # int
     stride_k_cache_2: tl.int64,  # int
@@ -302,30 +303,34 @@ def kernel_unified_attention_2d(
         else:
             K_b = K_b_load
 
-        cos_cache_offset = (
-            seq_offset[None, :] * stride_cs_cache_0
-            + offs_d_new[:, None] * stride_cs_cache_1
-        )
+        if FUSE_ROPE:
+            cos_cache_offset = (
+                seq_offset[None, :] * stride_cs_cache_0
+                + offs_d_new[:, None] * stride_cs_cache_1
+            )
 
-        sin_cache_offset = (
-            seq_offset[None, :] * stride_cs_cache_0
-            + (HEAD_SIZE_PADDED // 2 + offs_d_new[:, None]) * stride_cs_cache_1
-        )
+            sin_cache_offset = (
+                seq_offset[None, :] * stride_cs_cache_0
+                + (HEAD_SIZE_PADDED // 2 + offs_d_new[:, None]) * stride_cs_cache_1
+            )
 
-        cos = tl.load(
-            cos_sin_cache_ptr + cos_cache_offset,
-            mask=dim_mask_a[:, None] & tile_mask[None, :],
-            other=0.0,
-        ).to(K_a.dtype)
+            cos = tl.load(
+                cos_sin_cache_ptr + cos_cache_offset,
+                mask=dim_mask_a[:, None] & tile_mask[None, :],
+                other=0.0,
+            ).to(K_a.dtype)
 
-        sin = tl.load(
-            cos_sin_cache_ptr + sin_cache_offset,
-            mask=dim_mask_b[:, None] & tile_mask[None, :],
-            other=0.0,
-        ).to(K_b.dtype)
+            sin = tl.load(
+                cos_sin_cache_ptr + sin_cache_offset,
+                mask=dim_mask_b[:, None] & tile_mask[None, :],
+                other=0.0,
+            ).to(K_b.dtype)
 
-        K_rot_a = K_a * cos - K_b * sin
-        K_rot_b = K_b * cos + K_a * sin
+            K_rot_a = K_a * cos - K_b * sin
+            K_rot_b = K_b * cos + K_a * sin
+        else:
+            K_rot_a = K_a
+            K_rot_b = K_b
 
         # V : (TILE_SIZE, HEAD_SIZE)
         V_load = tl.load(
@@ -458,6 +463,7 @@ def kernel_unified_attention_3d(
     USE_SOFTCAP: tl.constexpr,  # bool
     USE_SINKS: tl.constexpr,  # bool
     SLIDING_WINDOW: tl.constexpr,  # int
+    FUSE_ROPE: tl.constexpr,  # bool
     stride_k_cache_0: tl.int64,  # int
     stride_k_cache_1: tl.int64,  # int
     stride_k_cache_2: tl.int64,  # int
@@ -664,30 +670,34 @@ def kernel_unified_attention_3d(
         else:
             K_b = K_b_load
 
-        cos_cache_offset = (
-            seq_offset[None, :] * stride_cs_cache_0
-            + offs_d_new[:, None] * stride_cs_cache_1
-        )
+        if FUSE_ROPE:
+            cos_cache_offset = (
+                seq_offset[None, :] * stride_cs_cache_0
+                + offs_d_new[:, None] * stride_cs_cache_1
+            )
 
-        sin_cache_offset = (
-            seq_offset[None, :] * stride_cs_cache_0
-            + (HEAD_SIZE_PADDED // 2 + offs_d_new[:, None]) * stride_cs_cache_1
-        )
+            sin_cache_offset = (
+                seq_offset[None, :] * stride_cs_cache_0
+                + (HEAD_SIZE_PADDED // 2 + offs_d_new[:, None]) * stride_cs_cache_1
+            )
 
-        cos = tl.load(
-            cos_sin_cache_ptr + cos_cache_offset,
-            mask=dim_mask_a[:, None] & tile_mask[None, :],
-            other=0.0,
-        ).to(K_a.dtype)
+            cos = tl.load(
+                cos_sin_cache_ptr + cos_cache_offset,
+                mask=dim_mask_a[:, None] & tile_mask[None, :],
+                other=0.0,
+            ).to(K_a.dtype)
 
-        sin = tl.load(
-            cos_sin_cache_ptr + sin_cache_offset,
-            mask=dim_mask_b[:, None] & tile_mask[None, :],
-            other=0.0,
-        ).to(K_b.dtype)
+            sin = tl.load(
+                cos_sin_cache_ptr + sin_cache_offset,
+                mask=dim_mask_b[:, None] & tile_mask[None, :],
+                other=0.0,
+            ).to(K_b.dtype)
 
-        K_rot_a = K_a * cos - K_b * sin
-        K_rot_b = K_b * cos + K_a * sin
+            K_rot_a = K_a * cos - K_b * sin
+            K_rot_b = K_b * cos + K_a * sin
+        else:
+            K_rot_a = K_a
+            K_rot_b = K_b
 
         # V : (TILE_SIZE, HEAD_SIZE_PADDED)
         V_load = tl.load(
@@ -910,6 +920,7 @@ def unified_attention(
 
     use_alibi_slopes = alibi_slopes is not None
     use_qq_bias = qq_bias is not None
+    fuse_rope = cos_sin_cache is not None
 
     block_size = v.shape[1]
     num_seqs = len(seqused_k)
@@ -980,6 +991,7 @@ def unified_attention(
             USE_SOFTCAP=(softcap > 0),
             USE_SINKS=(sinks is not None),
             SLIDING_WINDOW=(1 + window_size[0]),
+            FUSE_ROPE=fuse_rope,
             stride_k_cache_0=k.stride(0),
             stride_k_cache_1=k.stride(1),
             stride_k_cache_2=k.stride(2),
@@ -988,8 +1000,8 @@ def unified_attention(
             stride_v_cache_1=v.stride(1),
             stride_v_cache_2=v.stride(2),
             stride_v_cache_3=v.stride(3),
-            stride_cs_cache_0=cos_sin_cache.stride(0),
-            stride_cs_cache_1=cos_sin_cache.stride(1),
+            stride_cs_cache_0=cos_sin_cache.stride(0) if fuse_rope else 0,
+            stride_cs_cache_1=cos_sin_cache.stride(1) if fuse_rope else 0,
             query_start_len_ptr=cu_seqlens_q,
             BLOCK_Q=BLOCK_Q,
             num_seqs=num_seqs,
@@ -1056,6 +1068,7 @@ def unified_attention(
             USE_SOFTCAP=(softcap > 0),
             USE_SINKS=(sinks is not None),
             SLIDING_WINDOW=(1 + window_size[0]),
+            FUSE_ROPE=fuse_rope,
             stride_k_cache_0=k.stride(0),
             stride_k_cache_1=k.stride(1),
             stride_k_cache_2=k.stride(2),
@@ -1064,8 +1077,8 @@ def unified_attention(
             stride_v_cache_1=v.stride(1),
             stride_v_cache_2=v.stride(2),
             stride_v_cache_3=v.stride(3),
-            stride_cs_cache_0=cos_sin_cache.stride(0),
-            stride_cs_cache_1=cos_sin_cache.stride(1),
+            stride_cs_cache_0=cos_sin_cache.stride(0) if fuse_rope else 0,
+            stride_cs_cache_1=cos_sin_cache.stride(1) if fuse_rope else 0,
             query_start_len_ptr=cu_seqlens_q,
             BLOCK_Q=BLOCK_Q,
             num_seqs=num_seqs,
