@@ -129,7 +129,6 @@ class RotaryEmbedding(RotaryEmbeddingBase):
             key_pass = key[..., self.rotary_dim :]
             key_rot = apply_rotary_emb_torch(key_rot, cos, sin, self.is_neox_style)
             key = torch.cat((key_rot, key_pass), dim=-1).reshape(key_shape)
-
         return query, key
 
     def forward_cuda(

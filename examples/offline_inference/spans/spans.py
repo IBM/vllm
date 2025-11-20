@@ -62,7 +62,7 @@ def main():
     # enables block attention
     # -> when this line is not commented, we expect a speedup
     #    in the execution of the last two .generate calls
-    os.environ["VLLM_V1_SPANS_ENABLED"] = "False"
+    os.environ["VLLM_V1_SPANS_ENABLED"] = "True"
 
     # the token that tells vLLM "this is the beginning of a span"
     os.environ["VLLM_V1_SPANS_TOKEN_PLUS"] = str(SPAN_TOK_PLUS)
@@ -72,7 +72,7 @@ def main():
     os.environ["VLLM_V1_SPANS_TOKEN_CROSS"] = str(SPAN_TOK_CROSS)
 
     # will print every step of the span process if set to true
-    os.environ["VLLM_V1_SPANS_DEBUG"] = "False"
+    os.environ["VLLM_V1_SPANS_DEBUG"] = "True"
 
     # will disable the adjustment of positional encodings when a KV cache
     # block is loaded to a different position than it was stored
