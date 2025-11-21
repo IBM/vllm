@@ -1384,7 +1384,7 @@ def load_log_config(log_config_file: str | None) -> dict | None:
         )
         return None
 
-if True: #envs.VLLM_V1_SPANS_ENABLED:
+if envs.VLLM_V1_SPANS_ENABLED:
     import spnl
     import time
     from fastapi import Body
@@ -1442,6 +1442,34 @@ if True: #envs.VLLM_V1_SPANS_ENABLED:
             raw_request.app.state.vllm_config.cache_config.block_size
         )
 
+        match req:
+            case spnl.TokenizedQuery.TokenizedChatCompletionQuery(q):
+                req = q # intentional fall-through
+            case spnl.TokenizedQuery.CompletionRequest(q):
+                request = CompletionRequest(model=q.model, max_tokens=q.max_tokens, temperature=q.temperature, prompt=q.inputs, stream=stream)
+                # what we want to do, but this is a fastapi endpoint... return create_completion(request, raw_request)
+                handler = completion(raw_request)
+                if handler is None:
+                    return base(raw_request).create_error_response(
+                        message="The model does not support Completions API")
+
+                try:
+                    generator = await handler.create_completion(request, raw_request)
+                except OverflowError as e:
+                    raise HTTPException(status_code=HTTPStatus.BAD_REQUEST.value,
+                                        detail=str(e)) from e
+                except Exception as e:
+                    raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
+                                        detail=str(e)) from e
+
+                if isinstance(generator, ErrorResponse):
+                    return JSONResponse(content=generator.model_dump(),
+                                        status_code=generator.error.code)
+                elif isinstance(generator, CompletionResponse):
+                    return JSONResponse(content=generator.model_dump())
+
+                return StreamingResponse(content=generator, media_type="text/event-stream")
+        
         request_id = raw_request.headers.get(
             "X-Request-Id") or uuid.uuid4().hex
         client = engine_client(raw_request)
@@ -1451,9 +1479,6 @@ if True: #envs.VLLM_V1_SPANS_ENABLED:
             async def sgen():
                 output_idx: List[int] = [0 for _ in range(req.n)]
                 async for res in generator:
-                    for index, output in enumerate(res.outputs):
-                        print(f"output1={output.text[output_idx[index]:]}")
-                        print(f"output2={output.text}")
                     yield ChatCompletionStreamResponse(
                         id=request_id,
                         object="chat.completion.chunk",
