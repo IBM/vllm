@@ -2675,9 +2675,6 @@ class GPUModelRunner(
         num_scheduled_tokens = scheduler_output.total_num_scheduled_tokens
         with record_function_or_nullcontext("gpu_model_runner: preprocess"):
             with self.synchronize_input_prep():
-                # handle repositioning requests
-                self._perform_repositioning(scheduler_output)
-
                 # Update persistent batch states.
                 self._update_states(scheduler_output)
 

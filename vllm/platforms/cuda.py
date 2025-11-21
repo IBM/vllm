@@ -78,9 +78,9 @@ def _get_backend_priorities(
             ]
         else:
             return [
+                AttentionBackendEnum.TRITON_ATTN,
                 AttentionBackendEnum.FLASH_ATTN,
                 AttentionBackendEnum.FLASHINFER,
-                AttentionBackendEnum.TRITON_ATTN,
                 AttentionBackendEnum.FLEX_ATTENTION,
             ]
 
