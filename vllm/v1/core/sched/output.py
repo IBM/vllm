@@ -20,7 +20,6 @@ if TYPE_CHECKING:
     from vllm.multimodal.inputs import MultiModalFeatureSpec
     from vllm.pooling_params import PoolingParams
     from vllm.sampling_params import SamplingParams
-    from vllm.v1.core.kv_cache_manager import BlockRepositionRequest
     from vllm.v1.request import Request
 else:
     ECConnectorMetadata = object
@@ -183,9 +182,6 @@ class SchedulerOutput:
     # list of mm_hash strings associated with the encoder outputs to be
     # freed from the encoder cache.
     free_encoder_mm_hashes: list[str]
-
-    # for KV cache repositioning (as part of Block-Attention implementation)
-    blocks_to_reposition: list[BlockRepositionRequest]
 
     # Whether the scheduled requests have all the output tokens they
     # need to perform grammar bitmask computation.

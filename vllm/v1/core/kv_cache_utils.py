@@ -111,8 +111,6 @@ class KVCacheBlock:
     block_id: int
     # Reference count.
     ref_cnt: int = 0
-    # Position (corresponds to positional encodings position)
-    position: int | None = None
     # The hash key (block hash + group id) of the block, only available
     # when the block is full and cached.
     _block_hash: BlockHashWithGroupId | None = None

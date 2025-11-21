@@ -7,6 +7,7 @@ from typing import ClassVar
 
 import torch
 
+import vllm.envs as envs
 from vllm.attention.backends.abstract import (
     AttentionBackend,
     AttentionImpl,
@@ -60,6 +61,8 @@ class TritonAttentionMetadata:
     cu_prefix_query_lens: torch.Tensor | None
     prefix_kv_lens: torch.Tensor | None
     suffix_kv_lens: torch.Tensor | None
+
+    cos_sin_cache: torch.Tensor | None = None
 
     # Optional aot scheduling
     scheduler_metadata: torch.Tensor | None = None
@@ -129,6 +132,11 @@ class TritonAttentionMetadataBuilder(AttentionMetadataBuilder[TritonAttentionMet
             suffix_kv_lens = None
             prefix_scheduler_metadata = None
 
+        if envs.VLLM_V1_SPANS_ENABLED:
+            cos_sin_cache = common_attn_metadata.cos_sin_cache
+        else:
+            cos_sin_cache = None
+
         attn_metadata = TritonAttentionMetadata(
             num_actual_tokens=num_actual_tokens,
             max_query_len=max_query_len,
@@ -143,6 +151,7 @@ class TritonAttentionMetadataBuilder(AttentionMetadataBuilder[TritonAttentionMet
             prefix_kv_lens=prefix_kv_lens,
             suffix_kv_lens=suffix_kv_lens,
             prefix_scheduler_metadata=prefix_scheduler_metadata,
+            cos_sin_cache=cos_sin_cache,
         )
         return attn_metadata
 
@@ -348,6 +357,8 @@ class TritonAttentionImpl(AttentionImpl):
 
         descale_shape = (cu_seqlens_q.shape[0] - 1, key.shape[1])
 
+        cos_sin_cache = attn_metadata.cos_sin_cache
+
         unified_attention(
             q=query[:num_actual_tokens],
             k=key_cache,
@@ -368,6 +379,7 @@ class TritonAttentionImpl(AttentionImpl):
             v_descale=layer._v_scale.expand(descale_shape),
             sinks=self.sinks,
             output_scale=output_scale,
+            cos_sin_cache=cos_sin_cache,
         )
 
         return output

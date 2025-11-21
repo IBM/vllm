@@ -3,7 +3,6 @@
 from collections.abc import Iterable, Sequence
 from typing import Any
 
-import vllm.envs as envs
 from vllm.distributed.kv_events import (
     MEDIUM_GPU,
     AllBlocksCleared,
@@ -242,8 +241,6 @@ class BlockPool:
             if new_hashes is not None:
                 new_hashes.append(maybe_convert_block_hash(block_hash))
 
-        self._set_block_positions(new_full_blocks, blocks, request)
-
         if self.enable_kv_cache_events:
             if num_cached_blocks == 0:
                 parent_block_hash: ExternalBlockHash | None = None
@@ -267,58 +264,6 @@ class BlockPool:
                     else None,
                     medium=MEDIUM_GPU,
                 )
-            )
-
-    def _set_block_positions(
-        self,
-        new_full_blocks: list[KVCacheBlock],
-        blocks: list[KVCacheBlock],
-        request: Request,
-    ):
-        """Sets the positions of new full blocks in the KV cache.
-
-        This function assigns positions to newly filled blocks based
-        on their order within the provided block list. The position
-        corresponds to the location embedded in K vectors (if using RoPE)
-        in the KV cache and is critical for maintaining correct alignment,
-        especially when prompt positions differ between requests.
-
-        Args:
-            new_full_blocks: List of KVCacheBlock objects that have been newly
-                filled and require position assignment.
-            blocks: List of all blocks associated with the current request,
-                used to determine the order in which positions are assigned.
-            request: The Request object containing token information for
-                debugging purposes.
-
-        Note:
-            When VLLM_V1_SPANS_DEBUG is enabled, this function includes
-            debug logging that prints each block's tokens, to help
-            debug span-related workflows.
-        """
-        pos = 0
-        for blk in blocks:
-            if blk in new_full_blocks:
-                blk.position = pos
-                if envs.VLLM_V1_SPANS_DEBUG:
-                    # this prints the tokens assigned to a new block
-                    # in the KV cache
-                    blk_tks = request.all_token_ids[pos : pos + 16]
-                    assert blk.block_hash is not None
-                    bhash = str(blk.block_hash)[:4] if blk.block_hash else None
-                    print(
-                        "[SPANS -> block_pool] assigning to pos",
-                        pos,
-                        "with hash",
-                        bhash,
-                        "block: ",
-                        blk_tks,
-                    )
-            pos += 16
-        if envs.VLLM_V1_SPANS_DEBUG:
-            print(
-                "[SPANS -> block_pool] assigned block count now ->",
-                len([b for b in self.blocks if b._block_hash]),
             )
 
     def get_new_blocks(self, num_blocks: int) -> list[KVCacheBlock]:
@@ -413,26 +358,10 @@ class BlockPool:
         blocks_list = list(ordered_blocks)
         for block in blocks_list:
             block.ref_cnt -= 1
-        # remove duplicates (blocks can now appear twice)
-        block_ids = set()
-        blocks_list_filtered = []
-        for block in blocks_list:
-            if block.block_id not in block_ids:
-                blocks_list_filtered.append(block)
-                block_ids.add(block.block_id)
+        # Remove duplicates while preserving order
+        dedup_bl = list({block.block_id: block for block in blocks_list}.values())
         self.free_block_queue.append_n(
-            [
-                block
-                for block in blocks_list_filtered
-                if block.ref_cnt == 0 and not block.is_null
-            ]
-        )
-        self.free_block_queue.append_n(
-            [
-                block
-                for block in blocks_list_filtered
-                if block.ref_cnt == 0 and not block.is_null
-            ]
+            [block for block in dedup_bl if block.ref_cnt == 0 and not block.is_null]
         )
 
     def reset_prefix_cache(self) -> bool:
