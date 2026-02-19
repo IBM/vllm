@@ -106,6 +106,7 @@ class KVCacheManager:
         metrics_collector: KVCacheMetricsCollector | None = None,
     ) -> None:
         self.max_model_len = max_model_len
+        self.hash_block_size = hash_block_size  # spnl: cache hit rate logging
 
         self.enable_caching = enable_caching
         self.use_eagle = use_eagle
@@ -192,6 +193,9 @@ class KVCacheManager:
                 request.block_hashes, max_cache_hit_length
             )
         )
+        if len(request.block_hashes) > 0:
+            bs = self.hash_block_size  # spnl: cache hit rate logging
+            print(f"vLLMCacheHitRate {100*(num_new_computed_tokens/(len(request.block_hashes)*bs)):.2f}% computed={num_new_computed_tokens} requested={len(request.block_hashes)*bs}", flush=True)
 
         if self.log_stats:
             assert self.prefix_cache_stats is not None

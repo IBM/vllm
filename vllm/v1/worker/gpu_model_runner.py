@@ -76,6 +76,7 @@ from vllm.model_executor.models.interfaces_base import (
     is_pooling_model,
     is_text_generation_model,
 )
+from vllm.model_executor.models.utils import PPMissingLayer
 from vllm.multimodal import MULTIMODAL_REGISTRY
 from vllm.multimodal.inputs import (
     BatchedTensorInputs,
@@ -1636,8 +1637,19 @@ class GPUModelRunner(
             return blk_table_tensor, slot_mapping
 
         block_table_gid_0, slot_mapping_gid_0 = _get_block_table_and_slot_mapping(0)
+
         if self.model_config.enable_return_routed_experts:
             self.slot_mapping = slot_mapping_gid_0[:num_tokens].cpu().numpy()
+
+        if not hasattr(self, "rotate"):
+            if not isinstance(self.model.model.layers[0], PPMissingLayer):
+                self.rotate = self.model.model.layers[0].self_attn.rotary_emb
+            else:
+                for lay in self.model.model.layers:
+                    if not isinstance(lay, PPMissingLayer):
+                        self.rotate = lay.self_attn.rotary_emb
+                        break
+
         cm_base = CommonAttentionMetadata(
             query_start_loc=self.query_start_loc.gpu[: num_reqs_padded + 1],
             query_start_loc_cpu=self.query_start_loc.cpu[: num_reqs_padded + 1],
@@ -1653,6 +1665,7 @@ class GPUModelRunner(
             block_table_tensor=block_table_gid_0,
             slot_mapping=slot_mapping_gid_0,
             causal=True,
+            cos_sin_cache=self.rotate.cos_sin_cache,
         )
 
         if self.dcp_world_size > 1:

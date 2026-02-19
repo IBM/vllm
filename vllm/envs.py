@@ -242,16 +242,21 @@ if TYPE_CHECKING:
     VLLM_ENABLE_INDUCTOR_MAX_AUTOTUNE: bool = True
     VLLM_ENABLE_INDUCTOR_COORDINATE_DESCENT_TUNING: bool = True
     VLLM_USE_NCCL_SYMM_MEM: bool = False
+    VLLM_USE_V2_MODEL_RUNNER: bool = False
     VLLM_NCCL_INCLUDE_PATH: str | None = None
+    VLLM_LOG_MODEL_INSPECTION: bool = False
+    VLLM_DEBUG_MFU_METRICS: bool = False
     VLLM_USE_FBGEMM: bool = False
     VLLM_GC_DEBUG: str = ""
     VLLM_DEBUG_WORKSPACE: bool = False
     VLLM_DISABLE_SHARED_EXPERTS_STREAM: bool = False
     VLLM_SHARED_EXPERTS_STREAM_TOKEN_THRESHOLD: int = 256
     VLLM_COMPILE_CACHE_SAVE_FORMAT: Literal["binary", "unpacked"] = "binary"
-    VLLM_USE_V2_MODEL_RUNNER: bool = False
-    VLLM_LOG_MODEL_INSPECTION: bool = False
-    VLLM_DEBUG_MFU_METRICS: bool = False
+    # spans vars
+    VLLM_V1_SPANS_ENABLED: bool = False
+    VLLM_V1_SPANS_DEBUG: bool = False
+    VLLM_V1_SPANS_TOKEN_PLUS: int = -1
+    VLLM_V1_SPANS_TOKEN_CROSS: int = -1
 
 
 def get_default_cache_root():
@@ -1596,6 +1601,23 @@ environment_variables: dict[str, Callable[[], Any]] = {
     #     Allows viewing and setting breakpoints in Inductor's code output files.
     "VLLM_COMPILE_CACHE_SAVE_FORMAT": env_with_choices(
         "VLLM_COMPILE_CACHE_SAVE_FORMAT", "binary", ["binary", "unpacked"]
+    ),
+    # whether to enable block-attention (span detection, fan-in, repositioning)
+    "VLLM_V1_SPANS_ENABLED": lambda: os.environ.get("VLLM_V1_SPANS_ENABLED", "False")
+    == "True",
+    # whether to print details pertaining to the block-attention
+    # implementation
+    "VLLM_V1_SPANS_DEBUG": lambda: os.environ.get("VLLM_V1_SPANS_DEBUG", "False")
+    == "True",
+    # for block-attention, the token that will be used in order to
+    # indicate the beginning of a span (needed for it to work)
+    "VLLM_V1_SPANS_TOKEN_PLUS": lambda: int(
+        os.environ.get("VLLM_V1_SPANS_TOKEN_PLUS", "-1")
+    ),
+    # for block-attention, a token that signals the beginning of a
+    # span which needs to depend on all previous tokens
+    "VLLM_V1_SPANS_TOKEN_CROSS": lambda: int(
+        os.environ.get("VLLM_V1_SPANS_TOKEN_CROSS", "-1")
     ),
     # Flag to enable v2 model runner.
     "VLLM_USE_V2_MODEL_RUNNER": lambda: bool(

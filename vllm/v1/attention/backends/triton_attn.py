@@ -7,6 +7,7 @@ from typing import ClassVar
 
 import torch
 
+import vllm.envs as envs
 from vllm.config import CUDAGraphMode, VllmConfig
 from vllm.config.cache import CacheDType
 from vllm.logger import init_logger
@@ -71,6 +72,8 @@ class TritonAttentionMetadata:
     cu_prefix_query_lens: torch.Tensor | None
     prefix_kv_lens: torch.Tensor | None
     suffix_kv_lens: torch.Tensor | None
+
+    cos_sin_cache: torch.Tensor | None = None
 
     # Optional aot scheduling
     scheduler_metadata: torch.Tensor | None = None
@@ -227,6 +230,11 @@ class TritonAttentionMetadataBuilder(AttentionMetadataBuilder[TritonAttentionMet
             suffix_kv_lens = None
             prefix_scheduler_metadata = None
 
+        if envs.VLLM_V1_SPANS_ENABLED:
+            cos_sin_cache = common_attn_metadata.cos_sin_cache
+        else:
+            cos_sin_cache = None
+
         attn_metadata = TritonAttentionMetadata(
             num_actual_tokens=num_actual_tokens,
             max_query_len=max_query_len,
@@ -235,17 +243,18 @@ class TritonAttentionMetadataBuilder(AttentionMetadataBuilder[TritonAttentionMet
             seq_lens=seq_lens,
             block_table=block_table_tensor,
             slot_mapping=slot_mapping,
+            seq_threshold_3D=self.seq_threshold_3D,
+            num_par_softmax_segments=self.num_par_softmax_segments,
+            softmax_segm_output=self.softmax_segm_output,
+            softmax_segm_max=self.softmax_segm_max,
+            softmax_segm_expsum=self.softmax_segm_expsum,
             use_cascade=use_cascade,
             common_prefix_len=common_prefix_len,
             cu_prefix_query_lens=cu_prefix_query_lens,
             prefix_kv_lens=prefix_kv_lens,
             suffix_kv_lens=suffix_kv_lens,
             prefix_scheduler_metadata=prefix_scheduler_metadata,
-            seq_threshold_3D=self.seq_threshold_3D,
-            num_par_softmax_segments=self.num_par_softmax_segments,
-            softmax_segm_output=self.softmax_segm_output,
-            softmax_segm_max=self.softmax_segm_max,
-            softmax_segm_expsum=self.softmax_segm_expsum,
+            cos_sin_cache=cos_sin_cache,
         )
         return attn_metadata
 
@@ -501,6 +510,8 @@ class TritonAttentionImpl(AttentionImpl):
         descale_shape = (cu_seqlens_q.shape[0] - 1, key_cache.shape[2])
         mm_prefix_range_tensor = attn_metadata.mm_prefix_range_tensor
 
+        cos_sin_cache = attn_metadata.cos_sin_cache
+
         unified_attention(
             q=query[:num_actual_tokens],
             k=key_cache,
@@ -509,6 +520,7 @@ class TritonAttentionImpl(AttentionImpl):
             cu_seqlens_q=cu_seqlens_q,
             max_seqlen_q=max_seqlen_q,
             seqused_k=seqused_k,
+            mm_prefix_range=mm_prefix_range_tensor,
             max_seqlen_k=max_seqlen_k,
             softmax_scale=self.scale,
             causal=True,
@@ -526,7 +538,7 @@ class TritonAttentionImpl(AttentionImpl):
             softmax_segm_expsum=softmax_segm_expsum,
             sinks=self.sinks,
             output_scale=output_scale,
-            mm_prefix_range=mm_prefix_range_tensor,
+            cos_sin_cache=cos_sin_cache,
         )
 
         return output
