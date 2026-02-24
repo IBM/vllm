@@ -8,7 +8,6 @@ from typing import ClassVar
 import torch
 
 from vllm.config import CUDAGraphMode, VllmConfig
->>>>>>> v0.15.1
 from vllm.config.cache import CacheDType
 from vllm.logger import init_logger
 from vllm.model_executor.layers.quantization.utils.quant_utils import (
@@ -33,6 +32,7 @@ from vllm.v1.attention.ops.triton_reshape_and_cache_flash import (
 )
 from vllm.v1.attention.ops.triton_unified_attention import unified_attention
 from vllm.v1.kv_cache_interface import AttentionSpec
+import vllm.envs as envs
 
 logger = init_logger(__name__)
 
