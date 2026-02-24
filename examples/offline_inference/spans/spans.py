@@ -47,7 +47,7 @@ def initialize_vllm(
 
 def main():
     model_names = [
-        "ldsjmdy/Tulu3-Block-FT",  # <- finetuned to handle block-attention
+        "dev/data/Tulu3-Block-FT",  # <- finetuned to handle block-attention
         "ldsjmdy/Tulu3-RAG",  #      <- baseline
     ]
     model_name = model_names[0]

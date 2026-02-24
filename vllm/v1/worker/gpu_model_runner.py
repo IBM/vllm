@@ -1707,14 +1707,14 @@ class GPUModelRunner(
             blk_table_tensor[num_reqs:num_reqs_padded].fill_(-1)
             return blk_table_tensor
 
-            if not hasattr(self, "rotate"):
-                if not isinstance(self.model.model.layers[0], PPMissingLayer):
-                    self.rotate = self.model.model.layers[0].self_attn.rotary_emb
-                else:
-                    for lay in self.model.model.layers:
-                        if not isinstance(lay, PPMissingLayer):
-                            self.rotate = lay.self_attn.rotary_emb
-                            break
+        if not hasattr(self, "rotate"):
+            if not isinstance(self.model.model.layers[0], PPMissingLayer):
+                self.rotate = self.model.model.layers[0].self_attn.rotary_emb
+            else:
+                for lay in self.model.model.layers:
+                    if not isinstance(lay, PPMissingLayer):
+                        self.rotate = lay.self_attn.rotary_emb
+                        break
 
         assert slot_mappings is not None
         block_table_gid_0 = _get_block_table(0)
