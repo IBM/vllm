@@ -53,4 +53,4 @@ model-hosting-container-standards >= 0.1.13, < 1.0.0
 mcp
 grpcio
 grpcio-reflection
-spnl >= 0.20.1
+spnl >= 0.21.0

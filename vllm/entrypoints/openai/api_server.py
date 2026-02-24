@@ -279,33 +279,6 @@ if envs.VLLM_V1_SPANS_ENABLED:
         if isinstance(prompt[0], list):
             return [TokensPrompt(prompt_token_ids=p) for p in prompt]
         return TokensPrompt(prompt_token_ids=prompt)
-    @router.post("/v1/query/prepare")
-    @with_cancellation
-    @load_aware_call
-    async def prepare_query(raw_request: Request,
-                            query: str = Body(..., media_type="text/plain")):
-        docs = [wrap(doc) for doc in spnl.tokenize_prepare(
-            spnl_state,
-            query,
-            True, # we need to preload the prefix of the plus/independent spans
-            PAD_TOKEN,
-            PLUS_TOKEN,
-            raw_request.app.state.vllm_config.cache_config.block_size
-        )]
-
-        request_id = raw_request.headers.get(
-            "X-Request-Id") or uuid.uuid4().hex
-        client = engine_client(raw_request)
-        generators = [client.generate(doc, SamplingParams(temperature=0,max_tokens=1), request_id) for doc in docs]
-        for generator in generators:
-            async for res in generator:
-                final = res.outputs[0]
-
-        if isinstance(generator, ErrorResponse):
-            return JSONResponse(content=generator.model_dump(),
-                                status_code=generator.error.code)
-        return JSONResponse(content={"success": True})
-
     @router.post("/v1/query/execute")
     @with_cancellation
     @load_aware_call
