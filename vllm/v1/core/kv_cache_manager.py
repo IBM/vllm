@@ -116,6 +116,7 @@ class KVCacheManager:
         # potential configs we could expose in the future.
         self.prefix_cache_stats = PrefixCacheStats() if log_stats else None
 
+        self.hash_block_size = hash_block_size
         self.coordinator = get_kv_cache_coordinator(
             kv_cache_config=kv_cache_config,
             max_model_len=self.max_model_len,
@@ -192,6 +193,9 @@ class KVCacheManager:
                 request.block_hashes, max_cache_hit_length
             )
         )
+        if len(request.block_hashes) > 0:
+            bs = self.hash_block_size  # spnl: cache hit rate logging
+            print(f"vLLMCacheHitRate {100*(num_new_computed_tokens/(len(request.block_hashes)*bs)):.2f}% computed={num_new_computed_tokens} requested={len(request.block_hashes)*bs}", flush=True)
 
         if self.log_stats:
             assert self.prefix_cache_stats is not None
